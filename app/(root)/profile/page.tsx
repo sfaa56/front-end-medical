@@ -3,22 +3,14 @@
 import BasicInfo from "@/components/profile/BasicInfo";
 import Password from "@/components/profile/Password";
 
-
 import React, { useState } from "react";
 
 function AdminProfilePage() {
-
-
-
   const [activityLog] = useState([
     { action: "Logged in", date: "2024-06-09 10:00" },
     { action: "Changed settings", date: "2024-06-08 18:22" },
     { action: "Exported report", date: "2024-06-07 14:10" },
   ]);
-
-
-
-
 
   return (
     <div className=" mx-6 p-8 bg-white rounded-xl shadow mb-10">
@@ -26,14 +18,13 @@ function AdminProfilePage() {
         Admin Profile
       </h1>
 
-    
-<div className="space-y-4"> 
-   {/* Basic Info */}
-     <BasicInfo/>
+      <div className="space-y-4">
+        {/* Basic Info */}
+        <BasicInfo />
 
         {/* Change Password Section */}
 
-<Password/>
+        <Password />
 
         {/* Activity Log Section */}
         <section className="border-t pt-6">
@@ -46,9 +37,8 @@ function AdminProfilePage() {
             ))}
           </ul>
         </section>
-        </div>
       </div>
- 
+    </div>
   );
 }
 
