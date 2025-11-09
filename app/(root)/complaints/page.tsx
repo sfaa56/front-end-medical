@@ -1,5 +1,5 @@
 "use client";
-import React, { useEffect } from "react";
+import React, { useEffect, useState } from "react";
 import { DataTable } from "./data-table";
 import columns from "./columns";
 import { useDispatch, useSelector } from "react-redux";
@@ -56,16 +56,15 @@ import Loading from "@/components/Loading";
 //   },
 // ];
 
-
-
 function Page() {
-  
-  const {items,loading,meta}=useSelector((state:RootState)=>state.complaints);
-
+  const { items, loading, meta } = useSelector(
+    (state: RootState) => state.complaints
+  );
+  const [fetching, setFetching] = useState(true);
 
   const dispatch = useDispatch<AppDispatch>();
 
-    useEffect(() => {
+  useEffect(() => {
     const fetchRequests = async () => {
       try {
         const resultAction = await dispatch(
@@ -83,6 +82,8 @@ function Page() {
         }
       } catch (error) {
         toast.error("something went wrong");
+      } finally {
+        setFetching(false);
       }
     };
 
@@ -96,9 +97,16 @@ function Page() {
         </h1>
       </div>
 
-{ <DataTable columns={columns} data={items} meta={meta}  />}
-
-     
+      {fetching ? (
+        <div className="w-full flex justify-center items-center min-h-[200px]">
+          <div className="animate-spin h-8 w-8 border-4 border-gray-300 border-t-secondary rounded-full" />
+          <span className="ml-2 text-secondary">Loading...</span>
+        </div>
+      ) : items ? (
+        <DataTable columns={columns} data={items} meta={meta} />
+      ) : (
+        <></>
+      )}
     </div>
   );
 }

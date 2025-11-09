@@ -30,6 +30,7 @@ export default function Page() {
   );
 
   const dispatch = useDispatch<AppDispatch>();
+  const [fetching, setFetching] = useState(true);
 
   useEffect(() => {
     const fetchRequests = async () => {
@@ -49,14 +50,14 @@ export default function Page() {
         }
       } catch (error) {
         toast.error("something went wrong");
+      } finally {
+        setFetching(false);
       }
     };
 
     fetchRequests();
   }, []);
 
-
-  
   // const serviceRequests = [
   //   {
   //     _id: '1',
@@ -113,7 +114,16 @@ export default function Page() {
         </h1>
       </div>
 
-      <DataTable meta={meta} data={serviceRequests} />
+      {fetching ? (
+        <div className="w-full flex justify-center items-center min-h-[200px]">
+          <div className="animate-spin h-8 w-8 border-4 border-gray-300 border-t-secondary rounded-full" />
+          <span className="ml-2 text-secondary">Loading...</span>
+        </div>
+      ) : serviceRequests ? (
+        <DataTable meta={meta} data={serviceRequests} />
+      ) : (
+        <></>
+      )}
     </div>
   );
 }

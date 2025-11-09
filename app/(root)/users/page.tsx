@@ -1,5 +1,5 @@
 "use client";
-import React, { useEffect } from "react";
+import React, { useEffect, useState } from "react";
 import { getColumns } from "./columns";
 
 import { DataTable } from "./data-table";
@@ -12,9 +12,13 @@ import { toast } from "sonner";
 import { apiClient } from "@/lib/api";
 
 export default function Page() {
-  const { users, loading,meta } = useSelector((state: RootState) => state.users);
+  const { users, loading, meta } = useSelector(
+    (state: RootState) => state.users
+  );
   const dispatch = useDispatch<AppDispatch>();
   const [specialties, setSpecialties] = React.useState<string[]>([]);
+
+  const [fetching, setFetching] = useState(true);
 
   useEffect(() => {
     // This is where you would fetch the users from your API
@@ -30,23 +34,25 @@ export default function Page() {
         }
       } catch (error) {
         console.error("Error fetching users:", error);
+      } finally {
+        setFetching(false);
       }
     };
     getUsers();
   }, []);
 
-    // Fetch specialties from API
-    useEffect(() => {
-      const fetchSpecialties = async () => {
-        try {
-          const res = await apiClient.get("/specialties");
-          setSpecialties(res.data); // Make sure your API returns an array of specialties
-        } catch (err) {
-          // Handle error
-        }
-      };
-      fetchSpecialties();
-    }, []);
+  // Fetch specialties from API
+  useEffect(() => {
+    const fetchSpecialties = async () => {
+      try {
+        const res = await apiClient.get("/specialties");
+        setSpecialties(res.data); // Make sure your API returns an array of specialties
+      } catch (err) {
+        // Handle error
+      }
+    };
+    fetchSpecialties();
+  }, []);
 
   return (
     <div className="px-6 ">
@@ -62,15 +68,15 @@ export default function Page() {
         </Link>
       </div>
 
-      {users  ? (
-        <DataTable data={users} specialties={specialties} />
-      ): (
-         <div className="w-full flex justify-center items-center min-h-[200px]">
+      {fetching ? (
+        <div className="w-full flex justify-center items-center min-h-[200px]">
           <div className="animate-spin h-8 w-8 border-4 border-gray-300 border-t-secondary rounded-full" />
           <span className="ml-2 text-secondary">Loading...</span>
         </div>
-
-
+      ) : users ? (
+        <DataTable data={users} specialties={specialties} />
+      ) : (
+        <></>
       )}
     </div>
   );
