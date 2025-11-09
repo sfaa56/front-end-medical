@@ -38,7 +38,7 @@ export const unblockUser = async (userId: string) => {
 
 
 
-export const getUserById = async (userId: string) => {
+export const getUserById = async (userId: any) => {
   console.log("api cinent",apiClient.defaults.baseURL)
   const response = await apiClient.get(`/users/${userId}`); 
   return response.data;

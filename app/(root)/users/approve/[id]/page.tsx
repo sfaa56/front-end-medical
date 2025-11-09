@@ -20,8 +20,11 @@ import {
 import { FiTrash2 } from "react-icons/fi";
 import { toast } from "sonner";
 import RejectForm from "@/components/users/rejectForm";
+import { useParams } from "next/navigation";
 
-export default function UserViewPage({ params }: { params: { id: string } }) {
+export default function UserViewPage() {
+  const { id } = useParams();
+
   const [user, setUser] = useState<any>(null);
   const [tab, setTab] = useState("profile");
   const dispatch = useDispatch<AppDispatch>();
@@ -32,10 +35,10 @@ export default function UserViewPage({ params }: { params: { id: string } }) {
   const router = useRouter();
 
   useEffect(() => {
-    getUserById(params.id)
+    getUserById(id)
       .then(setUser)
       .catch((err) => console.error("Error fetching user:", err));
-  }, [params.id]);
+  }, [id]);
 
   if (!user)
     return (
@@ -47,7 +50,7 @@ export default function UserViewPage({ params }: { params: { id: string } }) {
       </div>
     );
 
-  const isLoading = approvingUserId === params.id;
+  const isLoading = approvingUserId === id;
 
   const handelApproveUser = async (userId: string) => {
     const resultAction = await dispatch(approveUser(userId));
@@ -57,9 +60,9 @@ export default function UserViewPage({ params }: { params: { id: string } }) {
     }
   };
 
-    const deleteU = async (id,reason) => {
+  const deleteU = async (id, reason) => {
     try {
-      const resultAction = await dispatch(deleteUser(id,reason));
+      const resultAction = await dispatch(deleteUser(id, reason));
 
       if (deleteUser.fulfilled.match(resultAction)) {
         toast.success("User deleted successfully");
