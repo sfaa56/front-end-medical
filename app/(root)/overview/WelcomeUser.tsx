@@ -6,7 +6,7 @@ export default function WelcomeUser() {
   const user = useSelector((state: RootState) => state.auth.user);
   return (
     <p className="text-xl">
-      welcome, {user?.name || "........."}
+      welcome, {user?.firstName || "........."}
     </p>
   );
 }
