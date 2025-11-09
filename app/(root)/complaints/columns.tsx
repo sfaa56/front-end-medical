@@ -8,14 +8,33 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Button } from "@/components/ui/button";
+import { formDataFromCreatedAt } from "@/lib/utils";
+import Link from "next/link";
+import { AppDispatch, RootState } from "@/store/store";
+import { useDispatch, useSelector } from "react-redux";
+import { updateComplaint } from "@/features/complaint/complaintSlice";
+import { toast } from "sonner";
+import LoadingSpinner from "@/components/LoadingSpinner";
 
 export type complaints = {
-  id: string;
-  sender: string;
-  receiver: string;
+  _id: string;
+  complaintNumber: string;
+  sender: {
+    _id: string;
+    firstName: string;
+    lastName: string;
+  };
+  receiver: {
+    _id: string;
+    firstName: string;
+    lastName: string;
+  };
+  serviceId: any;
   type: string;
   status: string;
   date: string;
+  content: any;
+  officialResponse: any;
 };
 
 const statusColors: Record<string, string> = {
@@ -26,9 +45,21 @@ const statusColors: Record<string, string> = {
 };
 
 const columns: ColumnDef<complaints>[] = [
-  { accessorKey: "id", header: "Complaint ID" },
-  { accessorKey: "sender", header: "Sender" },
-  { accessorKey: "receiver", header: "Receiver" },
+  { accessorKey: "complaintNumber", header: "Complaint ID" },
+
+  {
+    accessorKey: "sender",
+    header: "Sender",
+
+    cell: ({ row }) => row.original.sender.firstName || "N/A",
+  },
+
+  {
+    accessorKey: "receiver",
+    header: "Receiver",
+
+    cell: ({ row }) => row.original.receiver.firstName || "N/A",
+  },
   { accessorKey: "type", header: "Type" },
   {
     accessorKey: "status",
@@ -46,13 +77,44 @@ const columns: ColumnDef<complaints>[] = [
       );
     },
   },
-  { accessorKey: "date", header: "Date" },
+  {
+    accessorKey: "date",
+    header: "Date",
+    cell: ({ row }) => {
+      return formDataFromCreatedAt(row.original.date);
+    },
+  },
   {
     id: "actions",
     header: "Actions",
     cell: ({ row }) => {
       const [open, setOpen] = useState(false);
       const complaint = row.original;
+
+      const [status, setStatus] = useState(complaint.status);
+      const [officialResponse, setOfficialResponse] = useState(
+        complaint.officialResponse || ""
+      );
+
+      const dispatch = useDispatch<AppDispatch>();
+
+      const { updating } = useSelector((state: RootState) => state.complaints);
+
+      const handleSave = async () => {
+        const data = {
+          status,
+          officialResponse,
+        };
+
+        try {
+          await dispatch(updateComplaint({ id: complaint._id, data }));
+
+          setOpen(false);
+        } catch (error) {
+          toast.error("Something went wrong");
+        }
+      };
+
       return (
         <>
           <button
@@ -63,7 +125,7 @@ const columns: ColumnDef<complaints>[] = [
           </button>
           {open && (
             <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
-              <div className="bg-white rounded-xl shadow-xl p-6 w-full max-w-md mx-2 relative">
+              <div className="bg-white rounded-xl shadow-xl p-6  w-auto min-w-[36%] mx-2 relative">
                 <button
                   className="absolute top-3 right-3 text-gray-400 hover:text-gray-600 text-xl"
                   onClick={() => setOpen(false)}
@@ -72,44 +134,62 @@ const columns: ColumnDef<complaints>[] = [
                   ×
                 </button>
                 <h2 className="font-bold mb-6 text-lg text-gray-700 border-b pb-3 ">
-                   Complaint Number:
-                  <span className=""> #{complaint.id}</span>
+                  Complaint Number:
+                  <span className=""> #{complaint.complaintNumber}</span>
                 </h2>
                 <div className="space-y-4 text-sm">
-                  <div className="flex">
+                  <Link
+                    href={`/users/view/${complaint?.sender?._id}`}
+                    className="flex"
+                  >
                     <span className="w-32 font-medium text-gray-600 ">
                       Sender
                     </span>
-                    <span className="text-secondary underline hover:cursor-pointer">{complaint.sender}</span>
-                  </div>
-                  <div className="flex">
+                    <span className="text-secondary underline hover:cursor-pointer">
+                      {complaint.sender.firstName || "N/A"}{" "}
+                      {complaint.sender.lastName || "N/A"}
+                    </span>
+                  </Link>
+
+                  <Link
+                    href={`/users/view/${complaint?.receiver?._id}`}
+                    className="flex"
+                  >
                     <span className="w-32 font-medium text-gray-600">
                       Receiver
                     </span>
-                    <span className="text-secondary underline hover:cursor-pointer">{complaint.receiver}</span>
-                  </div>
+                    <span className="text-secondary underline hover:cursor-pointer">
+                      {complaint.receiver.firstName || "N/A"}{" "}
+                      {complaint.receiver.lastName || "N/A"}
+                    </span>
+                  </Link>
 
-                      <div className="flex">
+                  <Link
+                    href={`/ServiceRequests/view/${complaint.serviceId._id}`}
+                    className="flex"
+                  >
                     <span className="w-32 font-medium text-gray-600">
                       Service
                     </span>
-                    <span className="text-secondary underline hover:cursor-pointer">Car repair</span>
-                  </div>
+                    <span className="text-secondary underline hover:cursor-pointer">
+                      {complaint.serviceId.title || "N/A"}
+                    </span>
+                  </Link>
+
                   <div className="flex">
                     <span className="w-32 font-medium text-gray-600">Type</span>
-                    <span>{complaint.type}</span>
+                    <span>{complaint?.type}</span>
                   </div>
                   <div className="flex">
                     <span className="w-32 font-medium text-gray-600">Date</span>
-                    <span>{complaint.date}</span>
+                    <span>{formDataFromCreatedAt(complaint?.date)}</span>
                   </div>
                   <div>
                     <span className="font-medium text-gray-600 block mb-1">
                       Content
                     </span>
                     <p className="border rounded-md p-3 bg-gray-50 text-gray-800 break-words whitespace-pre-line">
-                      The provider was an hour behind schedule and did not
-                      answer the phone
+                      {complaint.content}
                     </p>
                   </div>
                   <div>
@@ -117,26 +197,28 @@ const columns: ColumnDef<complaints>[] = [
                       Official response
                     </span>
                     <textarea
+                      value={officialResponse}
+                      onChange={(e) => setOfficialResponse(e.target.value)}
                       className="w-full border rounded-md p-2 text-sm focus:outline-secondary"
                       rows={3}
                       placeholder="Type your official response here..."
                     />
                   </div>
 
-           
-
                   <div className="flex  flex-col">
                     <span className="font-medium text-gray-600 block mb-1">
                       Change Status
                     </span>
 
-                    <Select onValueChange={(value) => {}}>
+                    <Select value={status} onValueChange={setStatus}>
                       <SelectTrigger className="gap-4">
                         <SelectValue placeholder="Status" />
                       </SelectTrigger>
 
                       <SelectContent>
-                                                <SelectItem value={"In Progress"}>In Progress</SelectItem>
+                        <SelectItem value={"In Progress"}>
+                          In Progress
+                        </SelectItem>
 
                         <SelectItem value={"Pending"}>Pending</SelectItem>
                         <SelectItem value={"Resolved"}>Resolved</SelectItem>
@@ -147,11 +229,12 @@ const columns: ColumnDef<complaints>[] = [
 
                   <div className="flex justify-start mt-2">
                     <Button
-                    variant={"submit"}
+                      variant={"submit"}
                       className=""
-                      onClick={() => setOpen(false)}
+                      onClick={handleSave}
+                      disabled={updating}
                     >
-                      Save Reply
+                      {updating ? <LoadingSpinner /> : "Save Reply"}
                     </Button>
                   </div>
                 </div>

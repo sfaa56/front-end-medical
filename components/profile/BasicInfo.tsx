@@ -13,30 +13,34 @@ function BasicInfo() {
     (state: RootState) => state.auth
   );
 
+
+  const localUser = (user as any)?.user 
+
   const dispatch = useDispatch<AppDispatch>();
 
   // Dummy admin data
   const [profile, setProfile] = useState({
-    id: user?._id,
-    name: user?.name,
-    email: user?.email,
+    id: localUser?._id,
+    firstName: localUser?.firstName,
+    lastName: localUser?.lastName,
+    email: localUser?.email,
     role: "Administrator",
-    phoneNumber: user?.phoneNumber,
+    phone: localUser?.phone,
     avatar: "",
   });
 
   useEffect(() => {
-    if (user) {
+    if (localUser) {
       setProfile((prev) => ({
         ...prev,
-        ...user,
+        ...localUser,
       }));
       setForm((prev) => ({
         ...prev,
-        ...user,
+        ...localUser,
       }));
     }
-  }, [user]);
+  }, [localUser]);
 
   const [edit, setEdit] = useState(false);
   const [form, setForm] = useState(profile);
@@ -49,8 +53,8 @@ function BasicInfo() {
 
   const validateProfile = () => {
     const errs: { [key: string]: string } = {};
-    if (!form.name || form.name.trim().length < 3) {
-      errs.name = "Name is required and must be at least 3 characters.";
+    if (!form.firstName || form.firstName.trim().length < 3) {
+      errs.firstName = "Name is required and must be at least 3 characters.";
     }
     if (
       !form.email ||
@@ -59,8 +63,8 @@ function BasicInfo() {
     ) {
       errs.email = "A valid email is required.";
     }
-    if (form.phoneNumber && !/^\+?\d{7,15}$/.test(form.phoneNumber)) {
-      errs.phoneNumber = "Phone number is invalid.";
+    if (form.phone && !/^\+?\d{7,15}$/.test(form.phone)) {
+      errs.phone = "Phone number is invalid.";
     }
     return errs;
   };
@@ -108,7 +112,7 @@ function BasicInfo() {
 
         <div className="flex flex-col">
           {" "}
-          <div className="text-lg font-semibold">{profile.name}</div>
+          <div className="text-lg font-semibold">{profile.firstName} {profile.lastName}</div>
           <div className="text-gray-500">{profile.role}</div>
         </div>
       </div>
@@ -120,16 +124,30 @@ function BasicInfo() {
           {edit ? (
             <form onSubmit={handleSave} className="space-y-4">
               <div>
-                <label className="block mb-1 font-medium ">Name</label>
+                <label className="block mb-1 font-medium ">First Name</label>
                 <input
                   className="w-full border rounded px-3 py-2"
-                  name="name"
-                  value={form.name}
+                  name="firstName"
+                  value={form.firstName}
                   onChange={handleChange}
                   required
                 />
-                {errors.name && (
-                  <span className="text-red-500 text-xs">{errors.name}</span>
+                {errors.firstName && (
+                  <span className="text-red-500 text-xs">{errors.firstName}</span>
+                )}
+              </div>
+
+                            <div>
+                <label className="block mb-1 font-medium ">Last Name</label>
+                <input
+                  className="w-full border rounded px-3 py-2"
+                  name="lastName"
+                  value={form.lastName}
+                  onChange={handleChange}
+                  required
+                />
+                {errors.lastName && (
+                  <span className="text-red-500 text-xs">{errors.lastName}</span>
                 )}
               </div>
               <div>
@@ -150,13 +168,13 @@ function BasicInfo() {
                 <label className="block mb-1 font-medium">Phone</label>
                 <input
                   className="w-full border rounded px-3 py-2"
-                  name="phoneNumber"
-                  value={form.phoneNumber}
+                  name="phone"
+                  value={form.phone}
                   onChange={handleChange}
                 />
-                {errors.phoneNumber && (
+                {errors.phone && (
                   <span className="text-red-500 text-xs">
-                    {errors.phoneNumber}
+                    {errors.phone}
                   </span>
                 )}
               </div>
@@ -181,8 +199,12 @@ function BasicInfo() {
           ) : (
             <div className="space-y-3 ">
               <div className="flex">
-                <span className="font-medium w-[115px]">Name</span>{" "}
-                {profile.name}
+                <span className="font-medium w-[115px]">First Name</span>{" "}
+                {profile.firstName}
+              </div>
+                            <div className="flex">
+                <span className="font-medium w-[115px]">Last Name</span>{" "}
+                {profile.lastName}
               </div>
               <div className="flex">
                 <span className="font-medium w-[115px]">Email</span>{" "}
@@ -190,7 +212,7 @@ function BasicInfo() {
               </div>
               <div className="flex">
                 <span className="font-medium w-[115px]">Phone</span>{" "}
-                {profile.phoneNumber}
+                {profile.phone}
               </div>
               <div className="flex">
                 <span className="font-medium w-[115px]">Role</span>{" "}

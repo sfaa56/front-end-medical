@@ -1,6 +1,6 @@
 "use client";
-import React, { useState, useEffect } from "react";
-import { useForm, SubmitHandler } from "react-hook-form";
+import React, { useEffect, useState } from "react";
+import { useForm, SubmitHandler, Controller } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import {
@@ -14,7 +14,7 @@ import {
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { toast } from "sonner";
-import { FiChevronRight, FiUpload } from "react-icons/fi";
+import { FiChevronRight, FiShield, FiUpload } from "react-icons/fi";
 import Link from "next/link";
 import { Checkbox } from "@/components/ui/checkbox";
 import {
@@ -26,6 +26,14 @@ import {
 } from "@/components/ui/select";
 import { apiClient } from "@/lib/api";
 import axios from "axios";
+import { useLocationData } from "@/hooks/useLocationData";
+import { useSpecialties } from "@/hooks/useSpecialties";
+import { registerSchema } from "@/types/addUser";
+import { uploadToCloudinary } from "@/lib/cloudinaryUpload";
+import { useDispatch, useSelector } from "react-redux";
+import { AppDispatch, RootState } from "@/store/store";
+import { registerUser, reset } from "@/features/auth/authSlice";
+import { useRouter } from "next/navigation";
 
 // Mocked region/city data
 const regionCityData = [
@@ -33,247 +41,309 @@ const regionCityData = [
   { region: "Alexandria", cities: ["Smouha", "Stanley", "Gleem"] },
   { region: "Giza", cities: ["Dokki", "Mohandessin", "Haram"] },
 ];
-
 const ROLES = ["admin", "provider", "client"] as const;
 
-const formSchema = z
-  .object({
-    name: z.string().min(2, "First Name must be at least 2 characters."),
-    email: z.string().email("Please enter a valid email."),
-    phoneNumber: z
-      .string()
-      .regex(
-        /^\d{10,15}$/,
-        "Please enter a valid phone number (10-15 digits)."
-      ),
-  
-    specialty: z.string().min(1, "Please select a specialty"),
-    SubSpecialty: z.string().min(1, "Please select a sub-specialtie"),
-    image: z.any().optional(),
-    file: z.string().optional(),
-
-    city: z.string().min(1, "Please select a city."),
-    role: z.enum(ROLES),
-    password: z.string().min(6, "Password must be at least 6 characters."),
-    confirmPassword: z.string().min(6, "Please confirm your password."),
-    isVerified: z.boolean().optional(),
-
- 
-    district: z.string().min(1, "Please select a district."),
-    postalCode: z.string().min(1, "Please select a postal code."),
-  })
-  .refine((data) => data.password === data.confirmPassword, {
-    message: "Passwords do not match.",
-    path: ["confirmPassword"],
-  })
-  .refine(
-    (data) => {
-      if (data.role !== "provider") {
-        return data.isVerified === undefined;
-      }
-      return true;
-    },
-    {
-      message: "Provider approval is only for Providers.",
-      path: ["providerApproved"],
-    }
-  );
-
-type FormValues = z.infer<typeof formSchema>;
+type FormValues = z.infer<typeof registerSchema>;
 
 export default function AddUserPage() {
-  const [loading, setLoading] = useState(false);
-  const [cities, setCities] = useState<any[]>([]);
-  const [specialties, setSpecialties] = useState<any[]>([]);
-  const [imageFile, setImageFile] = useState(null);
   const [uploadProgress, setUploadProgress] = useState<number>(0);
+  const [userType, setUserType] = useState<"provider" | "client">("client");
 
-  const CLOUDINARY_UPLOAD_PRESET = "userPic";
-  const CLOUDINARY_CLOUD_NAME = "dxhgmrvi0";
+  const dispatch = useDispatch<AppDispatch>();
+  const {  isError, isSuccess, message,isLoading } = useSelector(
+    (state: RootState) => state.auth
+  );
+
+  const router = useRouter();
+
+  // upload pic
+  const [clinicPhotoProgress, setClinicPhotoProgress] = useState<number>(0);
+  const [licenseFileProgress, setLicenseFileProgress] = useState<number>(0);
 
   const form = useForm<FormValues>({
-    resolver: zodResolver(formSchema),
+    resolver: zodResolver(registerSchema),
     defaultValues: {
       role: "client",
-    
-      city: "",
     },
   });
 
-  const city = form.watch("city");
-  const district = form.watch("district");
+  // cities
+  const { cities, loadingLocation, getDistricts, getPostalCodes } =
+    useLocationData();
+  const city = form.watch("location.city");
+  const district = form.watch("location.district");
 
-  const Specialty = form.watch("specialty");
+  const districts = getDistricts(city);
+  const postalCodes = getPostalCodes(city, district);
+
+  // clinic location
+  const clinicCity = form.watch("ClinicLocation.city");
+  const clinicDistrict = form.watch("ClinicLocation.district");
+
+  const clinicDistricts = getDistricts(clinicCity);
+  const clinicPostalCodes = getPostalCodes(clinicCity, clinicDistrict);
 
   // for filter specialties
-  const specialtyObject = specialties.find((c) => c.name === Specialty);
-  const subSpecialties = specialtyObject?.subSpecialties || [];
-
-  // for filter cities
-  const cityObj = cities.find((c) => c.name === city);
-  const districts = cityObj?.districts || [];
-  const districtObj = districts.find((d) => d.name === district);
-  const postalCodes = districtObj?.postalCodes || [];
+  const {
+    specialties,
+    loading: loadingSpecialties,
+    getSubSpecialties,
+  } = useSpecialties();
+  const Specialty = form.watch("specialty");
+  const subSpecialties = getSubSpecialties(Specialty);
 
   const role = form.watch("role");
-  const cityOptions = cities.find((r) => r.region === city)?.cities || [];
 
-  const handleImageChange = (e) => {
-    setImageFile(e.target.files[0]);
-  };
+  const handleClinicPhotoUpload = async (
+    e: React.ChangeEvent<HTMLInputElement>,
+    fieldOnChange: (value: any) => void,
+    name: string
+  ) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
 
-  // Fetch cities
-  useEffect(() => {
-    const fetchCities = async () => {
-      try {
-        const response = await apiClient("/cities");
-        if (response.status === 200) {
-          setCities(response.data);
-          // Set defaults if available
-          // if (response.data.length > 0) {
-          //   form.setValue("region", response.data[0].name);
-          //   if (response.data[0].districts.length > 0) {
-          //     form.setValue("district", response.data[0].districts[0].name);
-          //     if (response.data[0].districts[0].postalCodes.length > 0) {
-          //       form.setValue(
-          //         "postalCode",
-          //         response.data[0].districts[0].postalCodes[0]
-          //       );
-          //     }
-          //   }
-          // }
-        }
-      } catch {
-        toast.error("Error fetching cities");
-      }
-    };
-    fetchCities();
-  }, []);
-
-  // fetch specialty
-  useEffect(() => {
-    const fetchSpecialty = async () => {
-      try {
-        const response = await apiClient("/specialties");
-        if (response.status === 200) {
-          setSpecialties(response.data);
-          // Assuming you want to set the specialty options in the form
-          // form.setValue("specialty", response.data[0]?.name || "");
-        }
-      } catch {
-        toast.error("Error fetching specialties");
-      }
-    };
-    fetchSpecialty();
-  }, []);
-
-
-
-  const onSubmit: SubmitHandler<FormValues> = async (values) => {
-    setLoading(true);
     try {
-      const formData = new FormData();
-
-      if (imageFile) {
-        formData.append("file", imageFile);
+      // ✅ Validate type
+      const validTypes = ["application/pdf", "image/jpeg", "image/png"];
+      if (!validTypes.includes(file.type)) {
+        toast.error("Invalid file type. Only PDF, JPG, or PNG are allowed.");
+        return;
       }
-      formData.append("upload_preset", CLOUDINARY_UPLOAD_PRESET);
 
-      const res = await axios.post(
-        `https://api.cloudinary.com/v1_1/${CLOUDINARY_CLOUD_NAME}/image/upload`,
-        formData,
-        {
-          onUploadProgress: (progressEvent) => {
-            const total = progressEvent.total ?? 0;
-            if (total > 0) {
-              const percent = Math.round((progressEvent.loaded * 100) / total);
-              setUploadProgress(percent);
+      // ✅ Validate size (max 5MB)
+      if (file.size > 5 * 1024 * 1024) {
+        toast.error("File size must be less than 5MB.");
+        return;
+      }
+
+      // ✅ Optional: If image, validate dimensions
+      if (file.type.startsWith("image/")) {
+        const img = new Image();
+        img.src = URL.createObjectURL(file);
+
+        await new Promise<void>((resolve, reject) => {
+          img.onload = () => {
+            if (img.width < 200 || img.height < 200) {
+              toast.error("Image is too small. Minimum size is 200x200px.");
+              reject();
             } else {
-              setUploadProgress(0);
+              resolve();
             }
-          },
-        }
-      );
-
-      const url = res.data.secure_url;
-      const publicId = res.data.public_id;
-
-    const image ={
-        url,
-        publicId,
-    }
-
-      const { specialty, confirmPassword , district , ...userData } = {
-        ...values,
-            image
-      };
-
-
-
-      const response = await apiClient.post("/auth/register", userData);
-
-      if (response.status !== 201) {
-        throw new Error("Failed to add user");
+          };
+          img.onerror = () => {
+            toast.error("Failed to read the image file.");
+            reject();
+          };
+        });
       }
 
-      // Reset form after successful submission
-     form.reset({
-        image: null,
-        file: "",
-        role: "client",
-        city: "",
-        district: "",
-        postalCode: "",
-        specialty: "",
-        SubSpecialty: "",
-        email:"",
-        phoneNumber:"",
-        name: "",
-        password:"",
-        confirmPassword: "",
-        isVerified: undefined,
+      // ✅ Optimistic: store raw file for preview
+      fieldOnChange(file);
+
+      // ✅ Upload to Cloudinary with progress bar
+      const { url, publicId } = await uploadToCloudinary(file, (progress) => {
+        setClinicPhotoProgress(progress);
       });
 
-      setImageFile(null)
-
-      // API request here
-      toast("User added successfully!");
-    } catch (e) {
-      toast("Failed to add user.");
-    } finally {
-      setLoading(false);
+      // ✅ Replace with uploaded file info
+      fieldOnChange({ url, publicId });
+    } catch (error) {
+      console.error(error);
+      toast.error("Failed to upload file. Please try again.");
     }
   };
 
-  console.log("reRender", form.watch());
- 
+  const handleLicenseFileUpload = async (
+    e: React.ChangeEvent<HTMLInputElement>,
+    fieldOnChange: (value: any) => void,
+    name: string
+  ) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    try {
+      // ✅ Validate type
+      const validTypes = ["application/pdf", "image/jpeg", "image/png"];
+      if (!validTypes.includes(file.type)) {
+        toast.error("Invalid file type. Only PDF, JPG, or PNG are allowed.");
+        return;
+      }
+
+      // ✅ Validate size (max 5MB)
+      if (file.size > 5 * 1024 * 1024) {
+        toast.error("File size must be less than 5MB.");
+        return;
+      }
+
+      // ✅ Optional: If image, validate dimensions
+      if (file.type.startsWith("image/")) {
+        const img = new Image();
+        img.src = URL.createObjectURL(file);
+
+        await new Promise<void>((resolve, reject) => {
+          img.onload = () => {
+            if (img.width < 200 || img.height < 200) {
+              toast.error("Image is too small. Minimum size is 200x200px.");
+              reject();
+            } else {
+              resolve();
+            }
+          };
+          img.onerror = () => {
+            toast.error("Failed to read the image file.");
+            reject();
+          };
+        });
+      }
+
+      // ✅ Optimistic: store raw file for preview
+      fieldOnChange(file);
+
+      // ✅ Upload to Cloudinary with progress bar
+      const { url, publicId } = await uploadToCloudinary(file, (progress) => {
+        setLicenseFileProgress(progress);
+      });
+
+      // ✅ Replace with uploaded file info
+      fieldOnChange({ url, publicId });
+    } catch (error) {
+      console.error(error);
+      toast.error("Failed to upload file. Please try again.");
+    }
+  };
+
+  const handleImageChange = async (
+    e: React.ChangeEvent<HTMLInputElement>,
+    fieldOnChange: (value: any) => void
+  ) => {
+    const file = e.target.files?.[0];
+
+    if (!file) return;
+
+    try {
+      const img = new Image();
+      img.src = URL.createObjectURL(file);
+
+      await new Promise<void>((resolve, reject) => {
+        img.onload = () => {
+          if (img.width < 200 || img.height < 200) {
+            toast.error("Image is too small. Minimum size is 200x200px.");
+            reject();
+          } else {
+            resolve();
+          }
+        };
+        img.onerror = () => {
+          toast.error("Failed to read the image file.");
+          reject();
+        };
+      });
+
+      // ✅ Optimistic: store raw file for preview
+      fieldOnChange(file);
+
+      // Upload immediately
+      const { url, publicId } = await uploadToCloudinary(file, (progress) =>
+        setUploadProgress(progress)
+      );
+      form.setValue("image", { url, publicId });
+      fieldOnChange({ url, publicId });
+    } catch (error) {
+      console.error(error);
+      toast.error("Failed to upload file. Please try again.");
+    }
+  };
+
+  useEffect(() => {
+    if (isError) {
+      toast.error(message || "Registration failed");
+    }
+
+    if (isSuccess) {
+      toast.success("User added sucessfuly");
+    }
+    // cleanup
+    return () => {
+      dispatch(reset());
+    };
+  }, [isError, isSuccess, message, dispatch]);
+
+  const validatePasssword = () => {
+    if (form.getValues("password") !== form.getValues("confirmPassword")) {
+      form.setError("confirmPassword", { message: "Passwords do not match" });
+      return false;
+    }
+
+    return true;
+  };
+
+  const onSubmit: SubmitHandler<FormValues> = async (values) => {
+    if (!validatePasssword()) return;
+
+    const { ...userData } = {
+      ...values,
+    };
+
+    const resultAction = await dispatch(registerUser(userData));
+
+    if (registerUser.fulfilled.match(resultAction)) {
+      router.push("/users")
+    }
+  };
+
+  // Use react-hook-form's watch function from the form instance
+  const watch = form.watch;
+
+  console.log("errors", form.formState.errors);
 
   return (
     <Form {...form}>
-   
-        <div className="mx-[20px]">
-          <nav
-            className="flex items-center text-sm text-gray-500 mb-6"
-            aria-label="Breadcrumb"
+      <div className="mx-[20px]">
+        <nav
+          className="flex items-center text-sm text-gray-500 mb-6"
+          aria-label="Breadcrumb"
+        >
+          <Link href={"/users"}>
+            <span className="hover:underline cursor-pointer text-secondary">
+              Users List
+            </span>
+          </Link>
+          <FiChevronRight className="mx-2" />
+          <span className="font-semibold text-gray-700">Add User</span>
+        </nav>
+
+        {/* Toggle between User and client */}
+        <div className="flex gap-4 mb-6">
+          <Button
+            variant={userType === "client" ? "secondary" : "outline"}
+            onClick={() => {
+              setUserType("client");
+              form.setValue("role", "client");
+            }}
+            type="button"
           >
-            <Link href={"/users"}>
-              <span className="hover:underline cursor-pointer text-secondary">
-                Users List
-              </span>
-            </Link>
-            <FiChevronRight className="mx-2" />
-            <span className="font-semibold text-gray-700">Add User</span>
-          </nav>
-          <form
-            onSubmit={form.handleSubmit(onSubmit)}
-            className="space-y-6 bg-white p-8 grid grid-cols-2 gap-x-6 rounded-md"
+            Add client
+          </Button>
+          <Button
+            variant={userType === "provider" ? "secondary" : "outline"}
+            onClick={() => {
+              setUserType("provider");
+              form.setValue("role", "provider");
+            }}
+            type="button"
           >
+            Add Provider
+          </Button>
+        </div>
+
+        <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-8 mb-7">
+          <div className="bg-white rounded-md space-y-6  p-8 grid grid-cols-2 gap-x-6">
             {/* Image upload */}
             <div className="col-span-2 w-40">
               <FormField
                 control={form.control}
                 name="image"
-                render={() => (
+                render={({ field }) => (
                   <FormItem>
                     <FormControl>
                       <div>
@@ -282,19 +352,21 @@ export default function AddUserPage() {
                           type="file"
                           accept="image/*"
                           className="hidden"
-                          onChange={handleImageChange}
+                          onChange={(e) => {
+                            handleImageChange(e, field.onChange);
+                          }}
                         />
                         <label
                           htmlFor="imageUpload"
                           className="flex items-center justify-center border-2 border-dashed border-gray-400 rounded-2xl p-5 w-full hover:shadow-md cursor-pointer text-center"
                         >
                           <div className="flex text-md flex-col items-center justify-center space-y-2">
-                            {imageFile ? (
+                            {form.watch("image")?.url ? (
                               <>
                                 <img
-                                  src={URL.createObjectURL(imageFile)}
+                                  src={form.watch("image").url}
                                   alt="Preview"
-                                  className="w-40 h-20 object-cover rounde mb-2"
+                                  className="w-40 h-20 object-cover rounded mb-2"
                                 />
                                 {uploadProgress > 0 && uploadProgress < 100 && (
                                   <span className="text-xs text-gray-500">
@@ -327,15 +399,29 @@ export default function AddUserPage() {
 
             {/* Form fields */}
             <div className="col-span-2 grid gap-6 lg:grid-cols-2">
-              {/* name */}
+              {/* First Name */}
               <FormField
                 control={form.control}
-                name="name"
+                name="firstName"
                 render={({ field }) => (
                   <FormItem>
-                    <FormLabel>User Name</FormLabel>
+                    <FormLabel>First Name</FormLabel>
                     <FormControl>
-                      <Input placeholder="Enter Name" {...field} />
+                      <Input placeholder="Enter First Name" {...field} />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+              {/* Last Name */}
+              <FormField
+                control={form.control}
+                name="lastName"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Last Name</FormLabel>
+                    <FormControl>
+                      <Input placeholder="Enter Last Name" {...field} />
                     </FormControl>
                     <FormMessage />
                   </FormItem>
@@ -344,7 +430,7 @@ export default function AddUserPage() {
               {/* Phone */}
               <FormField
                 control={form.control}
-                name="phoneNumber"
+                name="phone"
                 render={({ field }) => (
                   <FormItem>
                     <FormLabel>Phone</FormLabel>
@@ -355,31 +441,76 @@ export default function AddUserPage() {
                   </FormItem>
                 )}
               />
-              {/* Role selector */}
+
+              {/* Email */}
               <FormField
                 control={form.control}
-                name="role"
+                name="email"
                 render={({ field }) => (
                   <FormItem>
-                    <FormLabel>Role</FormLabel>
+                    <FormLabel>Email</FormLabel>
+                    <FormControl>
+                      <Input placeholder="Email" {...field} />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+              {/* Password and Confirm Password */}
+              <div className="col-span-2 grid gap-6 lg:grid-cols-2">
+                <FormField
+                  control={form.control}
+                  name="password"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Password</FormLabel>
+                      <FormControl>
+                        <Input
+                          type="password"
+                          placeholder="Password"
+                          {...field}
+                        />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+                <FormField
+                  control={form.control}
+                  name="confirmPassword"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Confirm Password</FormLabel>
+                      <FormControl>
+                        <Input
+                          type="password"
+                          placeholder="Confirm Password"
+                          {...field}
+                        />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+              </div>
+
+              <FormField
+                control={form.control}
+                name="gender"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Gender</FormLabel>
                     <FormControl>
                       <Select
-                        value={field.value}
-                        onValueChange={(value) => {
-                          field.onChange(value);
-                          if (value !== "provider")
-                            form.setValue("isVerified", undefined);
-                        }}
+                        value={field.value ?? ""}
+                        onValueChange={field.onChange}
                       >
                         <SelectTrigger className="gap-4">
-                          <SelectValue placeholder="Role" />
+                          <SelectValue placeholder="Select Gender" />
                         </SelectTrigger>
                         <SelectContent>
-                          {ROLES.map((role) => (
-                            <SelectItem value={role} key={role}>
-                              {role}
-                            </SelectItem>
-                          ))}
+                          <SelectItem value="Male">Male</SelectItem>
+                          <SelectItem value="Female">Female</SelectItem>
                         </SelectContent>
                       </Select>
                     </FormControl>
@@ -387,6 +518,227 @@ export default function AddUserPage() {
                   </FormItem>
                 )}
               />
+
+              {/* location */}
+              <div className="col-span-2 w-full grid grid-cols-3 gap-6 items-end">
+                {/* City */}
+                <FormField
+                  control={form.control}
+                  name="location.city"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Loation</FormLabel>
+                      <FormControl>
+                        <Select
+                          value={field.value ?? ""}
+                          onValueChange={field.onChange}
+                          disabled={loadingLocation}
+                        >
+                          <SelectTrigger className="gap-4">
+                            <SelectValue placeholder="City" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {cities.map((c) => (
+                              <SelectItem key={c._id} value={c.name}>
+                                {c.name}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+                {/* District */}
+                <FormField
+                  control={form.control}
+                  name="location.district"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormControl>
+                        <Select
+                          value={field.value ?? ""}
+                          onValueChange={field.onChange}
+                          disabled={districts.length === 0}
+                        >
+                          <SelectTrigger className="gap-4">
+                            <SelectValue placeholder="District" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {districts.map((d) => (
+                              <SelectItem key={d._id} value={d.name}>
+                                {d.name}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+                {/* Postal Code */}
+                <FormField
+                  control={form.control}
+                  name="location.postalCode"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormControl>
+                        <Select
+                          value={field.value ?? ""}
+                          onValueChange={field.onChange}
+                          disabled={postalCodes.length === 0}
+                        >
+                          <SelectTrigger className="gap-4">
+                            <SelectValue placeholder="Postal Code" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {postalCodes.map((p) => (
+                              <SelectItem key={p._id} value={p._id}>
+                                {p.code}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+              </div>
+              {/* date */}
+              <div className="col-span-2 w-full grid grid-cols-3 gap-6 items-end">
+                {/* Day */}
+                <FormField
+                  control={form.control}
+                  name="dateOfBirth.day"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Birth Date</FormLabel>
+
+                      <FormControl>
+                        <Select
+                          value={field.value ? String(field.value) : ""}
+                          onValueChange={(val) => field.onChange(Number(val))}
+                        >
+                          <SelectTrigger className="gap-4">
+                            <SelectValue placeholder="Day" />
+                          </SelectTrigger>
+                          <SelectContent className="bg-white">
+                            {[...Array(31)].map((_, i) => (
+                              <SelectItem key={i + 1} value={String(i + 1)}>
+                                {i + 1}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+                {/* Month */}
+                <FormField
+                  control={form.control}
+                  name="dateOfBirth.month"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormControl>
+                        <Select
+                          value={field.value ?? ""}
+                          onValueChange={field.onChange}
+                        >
+                          <SelectTrigger className="gap-4">
+                            <SelectValue placeholder="Month" />
+                          </SelectTrigger>
+                          <SelectContent className="bg-white">
+                            {[
+                              "January",
+                              "February",
+                              "March",
+                              "April",
+                              "May",
+                              "June",
+                              "July",
+                              "August",
+                              "September",
+                              "October",
+                              "November",
+                              "December",
+                            ].map((month) => (
+                              <SelectItem key={month} value={month}>
+                                {month}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+                {/* Year */}
+                <FormField
+                  control={form.control}
+                  name="dateOfBirth.year"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormControl>
+                        <Select
+                          value={field.value ? String(field.value) : ""}
+                          onValueChange={(val) => field.onChange(Number(val))}
+                        >
+                          <SelectTrigger className="gap-4">
+                            <SelectValue placeholder="Year" />
+                          </SelectTrigger>
+                          <SelectContent className="bg-whtie">
+                            {Array.from({ length: 100 }, (_, i) => {
+                              const year = new Date().getFullYear() - i;
+                              return (
+                                <SelectItem key={year} value={String(year)}>
+                                  {year}
+                                </SelectItem>
+                              );
+                            })}
+                          </SelectContent>
+                        </Select>
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+              </div>
+            </div>
+
+            {userType === "provider" && (
+              <FormField
+                control={form.control}
+                name="isVerified"
+                render={({ field }) => (
+                  <FormItem className="col-span-2 flex flex-row items-center space-x-1">
+                    <FormControl>
+                      <Checkbox
+                        checked={field.value ?? false}
+                        onCheckedChange={field.onChange}
+                        id="isVerified"
+                      />
+                    </FormControl>
+                    <FormLabel htmlFor="isVerified">
+                      Approve provider account immediately
+                    </FormLabel>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+            )}
+          </div>
+
+          {userType === "provider" && (
+            <div className="bg-white rounded-md space-y-6 p-8 grid grid-cols-2 gap-x-6">
+              <h2 className="col-span-2 font-semibold text-lg mb-4">
+                Professional Info
+              </h2>
               {/* Specialty */}
               <FormField
                 control={form.control}
@@ -398,6 +750,7 @@ export default function AddUserPage() {
                       <Select
                         value={field.value ?? ""}
                         onValueChange={field.onChange}
+                        disabled={loadingSpecialties}
                       >
                         <SelectTrigger className="gap-4">
                           <SelectValue placeholder="Specialty" />
@@ -416,13 +769,13 @@ export default function AddUserPage() {
                 )}
               />
 
-              {/* sub-Specialties */}
+              {/* Sub-Specialty */}
               <FormField
                 control={form.control}
-                name="SubSpecialty"
+                name="subspecialty"
                 render={({ field }) => (
                   <FormItem>
-                    <FormLabel>Specialty</FormLabel>
+                    <FormLabel>Sub-Specialty</FormLabel>
                     <FormControl>
                       <Select
                         value={field.value ?? ""}
@@ -430,7 +783,7 @@ export default function AddUserPage() {
                         disabled={subSpecialties.length === 0}
                       >
                         <SelectTrigger className="gap-4">
-                          <SelectValue placeholder="sub-Specialty" />
+                          <SelectValue placeholder="Sub-Specialty" />
                         </SelectTrigger>
                         <SelectContent>
                           {subSpecialties.map((s) => (
@@ -445,180 +798,567 @@ export default function AddUserPage() {
                   </FormItem>
                 )}
               />
-
-    
-              {/* Email */}
+              {/* Experience Years */}
               <FormField
                 control={form.control}
-                name="email"
+                name="experienceYears"
                 render={({ field }) => (
                   <FormItem>
-                    <FormLabel>Email</FormLabel>
-                    <FormControl>
-                      <Input placeholder="Email" {...field} />
-                    </FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-              {/* Region */}
-              <FormField
-                control={form.control}
-                name="city"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>City</FormLabel>
-                    <FormControl>
-                      <Select
-                        value={field.value ?? ""}
-                        onValueChange={field.onChange}
-                      >
-                        <SelectTrigger className="gap-4">
-                          <SelectValue placeholder="City" />
-                        </SelectTrigger>
-                        <SelectContent>
-                          {cities.map((c) => (
-                            <SelectItem key={c._id} value={c.name}>
-                              {c.name}
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                    </FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-              {/* District */}
-              <FormField
-                control={form.control}
-                name="district"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>District</FormLabel>
-                    <FormControl>
-                      <Select
-                        value={field.value ?? ""}
-                        onValueChange={field.onChange}
-                        disabled={districts.length === 0}
-                      >
-                        <SelectTrigger className="gap-4">
-                          <SelectValue placeholder="District" />
-                        </SelectTrigger>
-                        <SelectContent>
-                          {districts.map((d) => (
-                            <SelectItem key={d._id} value={d.name}>
-                              {d.name}
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                    </FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-
-              {/* Postal Code */}
-              <FormField
-                control={form.control}
-                name="postalCode"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Postal Code</FormLabel>
-                    <FormControl>
-                      <Select
-                        value={field.value ?? ""}
-                        onValueChange={field.onChange}
-                        disabled={districts.length === 0}
-                      >
-                        <SelectTrigger className="gap-4">
-                          <SelectValue placeholder="Postal Code" />
-                        </SelectTrigger>
-                        <SelectContent>
-                          {postalCodes.map((p) => (
-                            <SelectItem key={p._id} value={p._id}>
-                              {p.code}
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                    </FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-            </div>
-            {/* Password and Confirm Password */}
-            <div className="col-span-2 grid gap-6 lg:grid-cols-2">
-              <FormField
-                control={form.control}
-                name="password"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Password</FormLabel>
+                    <FormLabel>Experience Years</FormLabel>
                     <FormControl>
                       <Input
-                        type="password"
-                        placeholder="Password"
-                        {...field}
+                        type="number"
+                        placeholder="Experience Years"
+                        value={field.value === undefined ? "" : field.value}
+                        onChange={(e) => {
+                          const val = e.target.value;
+                          field.onChange(val === "" ? "" : Number(val));
+                        }}
                       />
                     </FormControl>
                     <FormMessage />
                   </FormItem>
                 )}
               />
+              {/* License Number */}
               <FormField
                 control={form.control}
-                name="confirmPassword"
+                name="licenseNumber"
                 render={({ field }) => (
                   <FormItem>
-                    <FormLabel>Confirm Password</FormLabel>
+                    <FormLabel>License Number</FormLabel>
                     <FormControl>
-                      <Input
-                        type="password"
-                        placeholder="Confirm Password"
-                        {...field}
-                      />
+                      <Input placeholder="License Number" {...field} />
                     </FormControl>
                     <FormMessage />
                   </FormItem>
                 )}
               />
+              {/* File Upload */}
+              <div className="mt-4 col-span-2">
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Upload Medical License
+                </label>
+
+                <div
+                  className="border-2 border-dashed border-gray-300 rounded-lg p-6 text-center cursor-pointer hover:border-primary transition"
+                  onClick={() => {
+                    const input = document.getElementById("licenseFile");
+                    if (input) input.click();
+                  }}
+                >
+                  <p className="text-sm text-gray-500">
+                    Drag and drop your file here, or{" "}
+                    <span className="text-primary font-medium">browse</span>
+                  </p>
+                  <p className="text-xs text-gray-400 mt-1">
+                    Supported formats: PDF, JPG, PNG (max 5MB)
+                  </p>
+                </div>
+
+                <div className="w-fu">
+                  <FormField
+                    control={form.control}
+                    name="licenseFile"
+                    render={({ field }) => (
+                      <FormItem>
+                        <Controller
+                          name="licenseFile"
+                          control={form.control}
+                          render={({ field }) => (
+                            <input
+                              id="licenseFile"
+                              type="file"
+                              accept=".pdf,.jpg,.jpeg,.png"
+                              className="hidden"
+                              onChange={(e) =>
+                                handleClinicPhotoUpload(
+                                  e,
+                                  field.onChange,
+                                  field.name
+                                )
+                              }
+                            />
+                          )}
+                        />
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+
+                  {/* Show progress bar */}
+                  {clinicPhotoProgress > 0 && clinicPhotoProgress < 100 && (
+                    <div className="w-full bg-gray-200 rounded-full h-2 mt-2">
+                      <div
+                        className="bg-primary h-2 rounded-full"
+                        style={{ width: `${clinicPhotoProgress}%` }}
+                      />
+                    </div>
+                  )}
+                </div>
+
+                {/* Preview selected file */}
+                {watch("licenseFile") && (
+                  <div className="mt-2 text-sm text-gray-600">
+                    {watch("licenseFile")?.url ? (
+                      <div className="flex flex-col items-start space-y-2">
+                        {watch("licenseFile")?.url.match(
+                          /\.(jpg|jpeg|png)$/i
+                        ) && (
+                          <img
+                            src={watch("licenseFile").url}
+                            alt="Clinic"
+                            className="w-32 h-32 object-cover rounded-lg shadow-md"
+                          />
+                        )}
+                      </div>
+                    ) : (
+                      <p>
+                        Selected file:
+                        <span className="font-medium">
+                          {watch("licenseFile").url}
+                        </span>
+                      </p>
+                    )}
+                  </div>
+                )}
+              </div>
             </div>
-            {/* Provider approval (only if Provider) */}
-            {role === "provider" && (
-              <FormField
-                control={form.control}
-                name="isVerified"
-                render={({ field }) => (
-                  <FormItem className="col-span-2 flex flex-row items-center space-x-3">
-                    <FormControl>
-                      <Checkbox
-                        checked={field.value ?? false}
-                        onCheckedChange={field.onChange}
-                        id="isVerified"
+          )}
+
+          {userType === "provider" && (
+            <>
+              {/* Clinic Information Card */}
+              <div className="col-span-2 bg-white rounded-lg p-6 mb-6 shadow-sm space-y-6">
+                <h2 className="font-semibold text-lg mb-4">
+                  Clinic Information
+                </h2>
+                {/* Clinic Name */}
+                <FormField
+                  control={form.control}
+                  name="clinicName"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Clinic/Hospital Name</FormLabel>
+                      <FormControl>
+                        <Input placeholder="Clinic/Hospital Name" {...field} />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+                {/* Clinic Location */}
+                <div className="grid grid-cols-3 gap-6 mt-4 items-end">
+                  {/* Clinic City */}
+                  <FormField
+                    control={form.control}
+                    name="ClinicLocation.city"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Location</FormLabel>
+                        <FormControl>
+                          <Select
+                            value={field.value ?? ""}
+                            onValueChange={field.onChange}
+                            disabled={loadingLocation}
+                          >
+                            <SelectTrigger className="gap-4">
+                              <SelectValue placeholder="City" />
+                            </SelectTrigger>
+                            <SelectContent>
+                              {cities.map((c) => (
+                                <SelectItem key={c._id} value={c.name}>
+                                  {c.name}
+                                </SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                  {/* Clinic District */}
+                  <FormField
+                    control={form.control}
+                    name="ClinicLocation.district"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormControl>
+                          <Select
+                            value={field.value ?? ""}
+                            onValueChange={field.onChange}
+                            disabled={clinicDistricts.length === 0}
+                          >
+                            <SelectTrigger className="gap-4">
+                              <SelectValue placeholder="District" />
+                            </SelectTrigger>
+                            <SelectContent>
+                              {clinicDistricts.map((d) => (
+                                <SelectItem key={d._id} value={d.name}>
+                                  {d.name}
+                                </SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                  {/* Clinic Postal Code */}
+                  <FormField
+                    control={form.control}
+                    name="ClinicLocation.postalCode"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormControl>
+                          <Select
+                            value={field.value ?? ""}
+                            onValueChange={field.onChange}
+                            disabled={clinicPostalCodes.length === 0}
+                          >
+                            <SelectTrigger className="gap-4">
+                              <SelectValue placeholder="Postal Code" />
+                            </SelectTrigger>
+                            <SelectContent>
+                              {clinicPostalCodes.map((p) => (
+                                <SelectItem key={p._id} value={p._id}>
+                                  {p.code}
+                                </SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                </div>
+
+                {/* Day of Week */}
+                <FormField
+                  control={form.control}
+                  name="day"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Day of Week</FormLabel>
+                      <FormControl>
+                        <Select
+                          value={field.value ?? ""}
+                          onValueChange={field.onChange}
+                        >
+                          <SelectTrigger className="w-full ">
+                            <SelectValue placeholder="Select Day" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {[
+                              "Monday",
+                              "Tuesday",
+                              "Wednesday",
+                              "Thursday",
+                              "Friday",
+                              "Saturday",
+                              "Sunday",
+                            ].map((d) => (
+                              <SelectItem key={d} value={d}>
+                                {d}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+
+                {/* Time Pickers */}
+                <div className="flex gap-3 mt-3">
+                  <FormField
+                    control={form.control}
+                    name="timeFrom"
+                    render={({ field }) => (
+                      <FormItem className="w-full">
+                        <FormLabel>Time From</FormLabel>
+                        <FormControl>
+                          <Input
+                            type="time"
+                            placeholder="From"
+                            value={field.value ?? ""}
+                            onChange={field.onChange}
+                            className="w-full"
+                          />
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                  <FormField
+                    control={form.control}
+                    name="timeTo"
+                    render={({ field }) => (
+                      <FormItem className="w-full">
+                        <FormLabel>Time To</FormLabel>
+                        <FormControl>
+                          <Input
+                            type="time"
+                            placeholder="To"
+                            value={field.value ?? ""}
+                            onChange={field.onChange}
+                            className="w-full"
+                          />
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                </div>
+
+                {/* File Upload */}
+                <div className="mt-4">
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    Upload Clinic Photo
+                  </label>
+
+                  <div
+                    className="border-2 border-dashed border-gray-300 rounded-lg p-6 text-center cursor-pointer hover:border-primary transition"
+                    onClick={() => {
+                      const input = document.getElementById("clinicPhoto");
+                      if (input) input.click();
+                    }}
+                  >
+                    <p className="text-sm text-gray-500">
+                      Drag and drop your file here, or{" "}
+                      <span className="text-primary font-medium">browse</span>
+                    </p>
+                    <p className="text-xs text-gray-400 mt-1">
+                      Supported formats: PDF, JPG, PNG (max 5MB)
+                    </p>
+                  </div>
+
+                  <FormField
+                    control={form.control}
+                    name="clinicPhoto"
+                    render={({ field }) => (
+                      <FormItem className="w-full">
+                        <Controller
+                          name="clinicPhoto"
+                          control={form.control}
+                          render={({ field }) => (
+                            <input
+                              id="clinicPhoto"
+                              type="file"
+                              accept=".pdf,.jpg,.jpeg,.png"
+                              className="hidden"
+                              onChange={(e) =>
+                                handleLicenseFileUpload(
+                                  e,
+                                  field.onChange,
+                                  field.name
+                                )
+                              }
+                            />
+                          )}
+                        />
+
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+
+                  {/* Show progress bar */}
+                  {licenseFileProgress > 0 && licenseFileProgress < 100 && (
+                    <div className="w-full bg-gray-200 rounded-full h-2 mt-2">
+                      <div
+                        className="bg-primary h-2 rounded-full"
+                        style={{ width: `${licenseFileProgress}%` }}
                       />
-                    </FormControl>
-                    <FormLabel htmlFor="isVerified">
-                      Approve provider account immediately
-                    </FormLabel>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
+                    </div>
+                  )}
+
+                  {watch("clinicPhoto") && (
+                    <div className="mt-2 text-sm text-gray-600">
+                      {watch("clinicPhoto")?.url ? (
+                        <div className="flex flex-col items-start space-y-2">
+                          {watch("clinicPhoto")?.url.match(
+                            /\.(jpg|jpeg|png)$/i
+                          ) && (
+                            <img
+                              src={watch("clinicPhoto").url}
+                              alt="Clinic"
+                              className="w-32 h-32 object-cover rounded-lg shadow-md"
+                            />
+                          )}
+                        </div>
+                      ) : (
+                        <p>
+                          Selected file:
+                          <span className="font-medium">
+                            {watch("clinicPhoto").url}
+                          </span>
+                        </p>
+                      )}
+                    </div>
+                  )}
+                </div>
+              </div>
+            </>
+          )}
+
+          {userType === "provider" && (
+            <div className="col-span-2 bg-white rounded-lg p-6 mb-6 shadow-sm space-y-6">
+              <h2 className="font-semibold text-lg mb-4">
+                Weekly Availability
+              </h2>
+              {/* Show global error for availability if exists */}
+              <FormMessage>
+                {(form.formState.errors as any)?.availability?.message}
+              </FormMessage>
+              <div className="space-y-4">
+                {[
+                  "Monday",
+                  "Tuesday",
+                  "Wednesday",
+                  "Thursday",
+                  "Friday",
+                  "Saturday",
+                  "Sunday",
+                ].map((day) => {
+                  const isSelected = !!form.watch(`availability.${day}`);
+                  return (
+                    <div
+                      key={day}
+                      className={`flex items-center gap-4 border rounded-lg p-3 hover:shadow-sm transition cursor-pointer ${
+                        isSelected ? "border-primary" : ""
+                      }`}
+                      onClick={() => {
+                        if (isSelected) {
+                          form.unregister(`availability.${day}`);
+                        } else {
+                          form.setValue(`availability.${day}`, {
+                            from: "",
+                            to: "",
+                          });
+                        }
+                      }}
+                      tabIndex={0}
+                      role="button"
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter" || e.key === " ") {
+                          if (isSelected) {
+                            form.unregister(`availability.${day}`);
+                          } else {
+                            form.setValue(`availability.${day}`, {
+                              from: "",
+                              to: "",
+                            });
+                          }
+                        }
+                      }}
+                    >
+                      {/* Checkbox and label */}
+                      <span className="flex items-center gap-2 w-32 select-none">
+                        <input
+                          type="checkbox"
+                          checked={isSelected}
+                          readOnly
+                          tabIndex={-1}
+                          className="cursor-pointer"
+                        />
+                        <span className="font-medium">{day}</span>
+                      </span>
+                      {/* If checked, show time pickers */}
+                      {isSelected && (
+                        <div className="flex items-center justify-between w-full gap-2">
+                          <div className="w-full">
+                            <FormField
+                              control={form.control}
+                              name={`availability.${day}.from`}
+                              render={({ field }) => (
+                                <FormItem>
+                                  <FormControl>
+                                    <Input
+                                      type="time"
+                                      placeholder="From"
+                                      value={field.value ?? ""}
+                                      onChange={field.onChange}
+                                      className="w-full"
+                                      onClick={(e) => e.stopPropagation()} // Prevent parent click
+                                    />
+                                  </FormControl>
+                                  <FormMessage />
+                                </FormItem>
+                              )}
+                            />
+                          </div>
+                          <span className="text-gray-500">to</span>
+                          <div className="w-full">
+                            <FormField
+                              control={form.control}
+                              name={`availability.${day}.to`}
+                              render={({ field }) => (
+                                <FormItem>
+                                  <FormControl>
+                                    <Input
+                                      type="time"
+                                      placeholder="To"
+                                      value={field.value ?? ""}
+                                      onChange={field.onChange}
+                                      className="w-full"
+                                      onClick={(e) => e.stopPropagation()} // Prevent parent click
+                                    />
+                                  </FormControl>
+                                  <FormMessage />
+                                </FormItem>
+                              )}
+                            />
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+
+          <Button
+            size="sm"
+            className="bg-secondary text-white rounded-sm hover:bg-secondary/80 justify-start "
+            type="submit"
+            disabled={isLoading}
+          >
+            {isLoading ? (
+              <>
+                Add User
+                <svg
+                  className="animate-spin h-4 w-4 text-white"
+                  xmlns="http://www.w3.org/2000/svg"
+                  fill="none"
+                  viewBox="0 0 24 24"
+                >
+                  <circle
+                    className="opacity-25"
+                    cx="12"
+                    cy="12"
+                    r="10"
+                    stroke="currentColor"
+                    strokeWidth="4"
+                  ></circle>
+                  <path
+                    className="opacity-75"
+                    fill="currentColor"
+                    d="M4 12a8 8 0 018-8v4a4 4 0 00-4 4H4z"
+                  ></path>
+                </svg>
+              </>
+            ) : (
+              "Add User"
             )}
-            <Button
-              size="sm"
-              className="bg-secondary text-white rounded-sm hover:bg-secondary/80 justify-start w-[81px]"
-              type="submit"
-              disabled={loading}
-            >
-              Add User
-            </Button>
-          </form>
-        </div>
-      
+          </Button>
+        </form>
+      </div>
     </Form>
   );
 }

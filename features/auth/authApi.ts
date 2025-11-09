@@ -1,5 +1,5 @@
 import { apiClient } from "@/lib/api";
-import { User } from "../../types/user";
+import { registerSchema, User, UserRegisterResponse } from "../../types/user";
 import axios from "axios";
 
 
@@ -13,7 +13,7 @@ export interface UpdatePayload {
   email?:string,
   phoneNumber?:string,
   role?:string,
-  _id?:string
+  id?:string
 }
 
 interface userReturnRequest {
@@ -44,7 +44,7 @@ export const logout = async ()=>{
 }
 
 export const update = async (data: UpdatePayload): Promise<User> => {
-  const response = await axios.put(`/api/users/${data._id}`, data,{ withCredentials: true });
+  const response = await axios.put(`/api/users/${data.id}`, data,{ withCredentials: true });
   return response.data;
 }
 
@@ -57,4 +57,22 @@ export const changePassword = async (data:changePasswordPayload):Promise<string>
 export const picture = async (data:picture):Promise<User>=>{
   const response = await axios.put("/api/users/picture/upload",data,{ withCredentials: true });
   return response.data.user
+}
+
+export interface RegisterPayload {
+  confirmPassword: string;
+  location: { postalCode: string };
+  [key: string]: any;
+}
+
+export const register = async (payload: RegisterPayload): Promise<UserRegisterResponse> => {
+    const { confirmPassword, location, ...rest } = payload;
+
+    const cleanData = {
+        ...rest,
+        postalCode: location.postalCode
+    };
+
+    const response = await apiClient.post('/auth/register', cleanData);
+    return response.data;
 }

@@ -1,8 +1,8 @@
 import { createSlice, createAsyncThunk } from "@reduxjs/toolkit";
 
-
-import { User } from "@/types/user";
+import { User, UserRegisterResponse, registerSchema } from "@/types/user";
 import * as authApi from "./authApi";
+
 
 
 interface AuthState {
@@ -11,6 +11,10 @@ interface AuthState {
   passwordLoading: boolean;
   error: string | null;
   token: string | null;
+  isSuccess: boolean;
+  isError: boolean;
+  isLoading: boolean;
+  message: string | null;
 }
 
 const initialState: AuthState = {
@@ -19,19 +23,42 @@ const initialState: AuthState = {
   passwordLoading: false,
   error: null,
   token: null,
+  isSuccess: false,
+  isError: false,
+  isLoading: false,
+  message: "",
 };
 
+// Asyncthunk for register
+export const registerUser = createAsyncThunk<
+  UserRegisterResponse,
+  authApi.RegisterPayload
+>("auth/registerUser", async (userData, thunkAPI) => {
+  try {
+    return await authApi.register(userData);
+  } catch (err: any) {
+    return thunkAPI.rejectWithValue(
+      err.response?.data?.error || "Something went wrong"
+    );
+  }
+});
+
 // what the thunk will eventually return,  // type of the argument (payload)
-export const loginUser = createAsyncThunk<User, authApi.LoginPayload>(
+export const loginUser = createAsyncThunk<any, authApi.LoginPayload>(
   "auth/login",
   async (data, thunkAPI) => {
     try {
       const response = await authApi.login(data); // { user, token }
       console.log("response111", response);
 
-      localStorage.setItem("user", JSON.stringify(response.user));
+      const dataWithExpiry = {
+        ...response,
+        expiry: Date.now() + 5 * 60 * 60 * 1000, // ⏰ expires in 5 hours
+      };
 
-      return response.user;
+      localStorage.setItem("user", JSON.stringify(dataWithExpiry));
+
+      return response;
     } catch (error: any) {
       console.error("Login error:", error); // <--- Add this line
       return thunkAPI.rejectWithValue(
@@ -56,7 +83,6 @@ export const updateAdmin = createAsyncThunk<User, authApi.UpdatePayload>(
     try {
       console.log("data", data);
       const response = await authApi.update(data); // { user, token }
-      console.log("response111", response);
 
       localStorage.setItem("user", JSON.stringify(response));
 
@@ -84,11 +110,10 @@ export const picture = createAsyncThunk<User, authApi.picture>(
   "auth/picture",
   async (data, { rejectWithValue }) => {
     try {
-    const res = await authApi.picture(data);
+      const res = await authApi.picture(data);
       localStorage.setItem("user", JSON.stringify(res));
-    
-      return res
 
+      return res;
     } catch (error) {
       console.error("Change password error", error);
       return rejectWithValue("Change Password failed");
@@ -102,6 +127,13 @@ const authSlice = createSlice({
   reducers: {
     setUserFromStorage: (state, action) => {
       state.user = action.payload.user;
+    },
+
+    reset: (state) => {
+      state.loading = false;
+      state.isSuccess = false;
+      state.isError = false;
+      state.message = null;
     },
   },
   extraReducers: (builder) => {
@@ -145,11 +177,29 @@ const authSlice = createSlice({
       .addCase(password.rejected, (state, action) => {
         state.passwordLoading = false;
         state.error = action.payload as string;
-      }).addCase(picture.fulfilled,(state,action)=>{
-         state.user=action.payload
+      })
+      .addCase(picture.fulfilled, (state, action) => {
+        state.user = action.payload;
+      })
+      .addCase(registerUser.pending, (state) => {
+        state.isLoading = true;
+      })
+      .addCase(registerUser.fulfilled, (state, action) => {
+        state.isLoading = false;
+        state.isSuccess = true;
+        state.user = null;
+
+        // If 'message' does not exist, set to null or extract from elsewhere
+        state.message = (action.payload as any).message || null;
+      })
+      .addCase(registerUser.rejected, (state, action) => {
+        state.isLoading = false;
+        state.isError = true;
+        state.message = action.payload as string;
+        state.user = null;
       });
   },
 });
 
-export const { setUserFromStorage } = authSlice.actions;
+export const { setUserFromStorage, reset } = authSlice.actions;
 export default authSlice.reducer;

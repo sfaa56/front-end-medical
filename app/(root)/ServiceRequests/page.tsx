@@ -1,9 +1,12 @@
 "use client";
-import React, { useEffect } from "react";
-
+import React, { useEffect, useState } from "react";
 
 import { DataTable } from "./data-table";
-
+import { apiClient } from "@/lib/api";
+import { toast } from "sonner";
+import { useDispatch, useSelector } from "react-redux";
+import { AppDispatch, RootState } from "@/store/store";
+import { fetchServiceRequests } from "@/features/ServiceRequests/ServiceRequestsSlice";
 
 export default function Page() {
   //   const {cities, setCities} = useSharedState()
@@ -21,63 +24,96 @@ export default function Page() {
 
   //     fetchCities()
   //   }, [])
-const serviceRequests = [
-  {
-    _id: '1',
-    title: 'General Health Checkup',
-    specialty: 'General',
-    city: 'Washington, D.C.',
-    numberOfOffers: 2,
-    status: 'completed',
-    clientName: 'John Doe',
-  },
-  {
-    _id: '2',
-    title: 'Heart Health Consultation',
-    specialty: 'Cardiology',
-    city: 'Cairo',
-    numberOfOffers: 5,
-    status: 'waiting',
-    clientName: 'Sara Ahmed',
-  },
-  {
-    _id: '3',
-    title: 'Routine Checkup',
-    specialty: 'General',
-    city: 'Dubai',
-    numberOfOffers: 1,
-    status: 'inprogress',
-    clientName: 'Ali Hassan',
-  },
-  {
-    _id: '4',
-    title: 'Skin Care Advice',
-    specialty: 'Dermatology',
-    city: 'Riyadh',
-    numberOfOffers: 4,
-    status: 'completed',
-    clientName: 'Mona Youssef',
-  },
-  {
-    _id: '5',
-    title: 'Post-Surgery Follow-up',
-    specialty: 'General',
-    city: 'Alexandria',
-    numberOfOffers: 3,
-    status: 'waiting',
-    clientName: 'Karim Nabil',
-  },
-];
+
+  const { serviceRequests, isLoading, meta } = useSelector(
+    (state: RootState) => state.serviceRequests
+  );
+
+  const dispatch = useDispatch<AppDispatch>();
+
+  useEffect(() => {
+    const fetchRequests = async () => {
+      try {
+        const resultAction = await dispatch(
+          fetchServiceRequests({ page: 1, limit: 10 })
+        );
+
+        if (fetchServiceRequests.fulfilled.match(resultAction)) {
+          console.log(
+            "ServiceRequests fetched successfully:",
+            resultAction.payload
+          );
+        } else {
+          console.error("Failed to fetch users:", resultAction.error.message);
+          toast.error("Failed to fetch users");
+        }
+      } catch (error) {
+        toast.error("something went wrong");
+      }
+    };
+
+    fetchRequests();
+  }, []);
 
 
+  
+  // const serviceRequests = [
+  //   {
+  //     _id: '1',
+  //     title: 'General Health Checkup',
+  //     specialty: 'General',
+  //     city: 'Washington, D.C.',
+  //     numberOfOffers: 2,
+  //     status: 'completed',
+  //     clientName: 'John Doe',
+  //   },
+  //   {
+  //     _id: '2',
+  //     title: 'Heart Health Consultation',
+  //     specialty: 'Cardiology',
+  //     city: 'Cairo',
+  //     numberOfOffers: 5,
+  //     status: 'waiting',
+  //     clientName: 'Sara Ahmed',
+  //   },
+  //   {
+  //     _id: '3',
+  //     title: 'Routine Checkup',
+  //     specialty: 'General',
+  //     city: 'Dubai',
+  //     numberOfOffers: 1,
+  //     status: 'inprogress',
+  //     clientName: 'Ali Hassan',
+  //   },
+  //   {
+  //     _id: '4',
+  //     title: 'Skin Care Advice',
+  //     specialty: 'Dermatology',
+  //     city: 'Riyadh',
+  //     numberOfOffers: 4,
+  //     status: 'completed',
+  //     clientName: 'Mona Youssef',
+  //   },
+  //   {
+  //     _id: '5',
+  //     title: 'Post-Surgery Follow-up',
+  //     specialty: 'General',
+  //     city: 'Alexandria',
+  //     numberOfOffers: 3,
+  //     status: 'waiting',
+  //     clientName: 'Karim Nabil',
+  //   },
+  // ];
 
   return (
     <div className="px-6 ">
       <div className="flex w-full items-end ">
-        <h1 className="text-black-200 font-semibold text-xl font-sans  mb-4">Service Requests</h1>
+        <h1 className="text-black-200 font-semibold text-xl font-sans  mb-4">
+          Service Requests
+        </h1>
       </div>
 
-      <DataTable   data={serviceRequests} />
+      <DataTable meta={meta} data={serviceRequests} />
     </div>
   );
 }

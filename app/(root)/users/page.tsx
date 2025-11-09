@@ -12,7 +12,7 @@ import { toast } from "sonner";
 import { apiClient } from "@/lib/api";
 
 export default function Page() {
-  const { users, loading } = useSelector((state: RootState) => state.users);
+  const { users, loading,meta } = useSelector((state: RootState) => state.users);
   const dispatch = useDispatch<AppDispatch>();
   const [specialties, setSpecialties] = React.useState<string[]>([]);
 
@@ -62,7 +62,7 @@ export default function Page() {
         </Link>
       </div>
 
-      {users && users.length > 0 ? (
+      {users  ? (
         <DataTable data={users} specialties={specialties} />
       ): (
          <div className="w-full flex justify-center items-center min-h-[200px]">

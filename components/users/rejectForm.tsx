@@ -23,6 +23,10 @@ import { Input } from "@/components/ui/input";
 import { toast } from "sonner";
 import { RxCross2 } from "react-icons/rx";
 import { Textarea } from "@/components/ui/textarea";
+import { useDispatch } from "react-redux";
+import { deleteUser } from "@/features/user/useSlice";
+import { AppDispatch } from "@/store/store";
+import { usePathname, useRouter } from "next/navigation";
 
 const formSchema = z.object({
   reason: z.string().min(5, {
@@ -32,8 +36,9 @@ const formSchema = z.object({
 
 function RejectForm({ propertyId }: { propertyId: string }) {
   const [open, setOpen] = React.useState(false);
-
   const [loading, setLoading] = React.useState(false);
+
+  const dispatch = useDispatch<AppDispatch>();
 
   const form = useForm<z.infer<typeof formSchema>>({
     resolver: zodResolver(formSchema),
@@ -42,31 +47,25 @@ function RejectForm({ propertyId }: { propertyId: string }) {
     },
   });
 
+  const pathname = usePathname();
+  const router = useRouter();
+
+  const isApprovePage = pathname.includes("approve");
+
   const onSubmit = async (values: z.infer<typeof formSchema>) => {
     setLoading(true);
 
     try {
-      //   const response = await fetch(
-      //     `${process.env.NEXT_PUBLIC_URL_SERVER}/api/admins/${propertyId}/properties/reject`,
-      //     {
-      //       method: "PUT",
-      //       headers: {
-      //         "Content-Type": "application/json",
-      //       },
-      //       body: JSON.stringify(values),
-      //     }
-      //   );
+      // Dispatch thunk with userId (propertyId) and reason
+      await dispatch(
+        deleteUser({ userId: propertyId, reason: values.reason })
+      ).unwrap(); // unwrap to catch errors directly
 
-      //   if (response.ok) {
-      //     toast(
-      //       "property rejected successfully",
-      //     );
-      //     setOpen(false);
-      //   }
-
-      toast("Provider rejected successfully");
+      router.push("/users");
+      toast.success("User deleted successfully");
+      setOpen(false);
     } catch (error) {
-      console.log("error", error);
+      toast.error(typeof error === "string" ? error : "Failed to delete user");
     } finally {
       setLoading(false);
     }
@@ -75,12 +74,21 @@ function RejectForm({ propertyId }: { propertyId: string }) {
   return (
     <Dialog open={open} onOpenChange={setOpen}>
       <DialogTrigger asChild>
-        <div
-          onClick={(e) => e.stopPropagation()}
-          className=" hover:cursor-pointer flex items-center gap-1 text-red-500"
-        >
-          <RxCross2 /> Reject
-        </div>
+        {isApprovePage ? (
+          <div
+            onClick={(e) => e.stopPropagation()}
+            className="px-3 py-1 flex items-center rounded border-red-300 border text-red-500 hover:bg-red-50 text-sm hover:cursor-pointer"
+          >
+            Reject
+          </div>
+        ) : (
+          <div
+            onClick={(e) => e.stopPropagation()}
+            className="hover:cursor-pointer flex items-center gap-1 text-red-500"
+          >
+            <RxCross2 /> Reject
+          </div>
+        )}
       </DialogTrigger>
       <DialogContent className="sm:max-w-[525px] h-[500px] bg-white">
         <DialogHeader>
@@ -92,7 +100,6 @@ function RejectForm({ propertyId }: { propertyId: string }) {
 
         <Form {...form}>
           <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-8">
-            {/* English Name Field */}
             <FormField
               control={form.control}
               name="reason"
@@ -115,9 +122,7 @@ function RejectForm({ propertyId }: { propertyId: string }) {
               size="sm"
               type="submit"
               disabled={loading}
-              onClick={(e) => {
-                e.stopPropagation();
-              }}
+              onClick={(e) => e.stopPropagation()}
             >
               {loading ? "Loading..." : "Submit"}
             </Button>

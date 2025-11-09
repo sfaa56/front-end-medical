@@ -6,26 +6,24 @@ import { useDispatch, useSelector } from "react-redux";
 import { AppDispatch, RootState } from "@/store/store";
 import { picture } from "@/features/auth/authSlice";
 
-const CLOUDINARY_UPLOAD_PRESET = "userPic"; 
-const CLOUDINARY_CLOUD_NAME = "dxhgmrvi0"; 
+const CLOUDINARY_UPLOAD_PRESET = "userPic";
+const CLOUDINARY_CLOUD_NAME = "dxhgmrvi0";
 
 function Picture() {
-
-    const { user, error, loading } = useSelector(
+  const { user, error, loading } = useSelector(
     (state: RootState) => state.auth
   );
 
   const dispatch = useDispatch<AppDispatch>();
-
 
   const [uploadProgress, setUploadProgress] = useState<number>(0);
   const [uploadingAvatar, setUploadingAvatar] = useState(false);
   const [avater, setAvater] = useState(user?.image?.url);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-useEffect(()=>{
-    setAvater(user?.image?.url)
-},[user])
+  useEffect(() => {
+    setAvater(user?.image?.url);
+  }, [user]);
 
   const handleAvatarClick = () => {
     if (fileInputRef.current) fileInputRef.current.click();
@@ -50,9 +48,7 @@ useEffect(()=>{
           onUploadProgress: (progressEvent) => {
             const total = progressEvent.total ?? 0;
             if (total > 0) {
-              const percent = Math.round(
-                (progressEvent.loaded * 100) / total
-              );
+              const percent = Math.round((progressEvent.loaded * 100) / total);
               setUploadProgress(percent);
             } else {
               setUploadProgress(0);
@@ -61,27 +57,25 @@ useEffect(()=>{
         }
       );
       const imageUrl = res.data.secure_url;
-      const publicId =res.data.public_id
+      const publicId = res.data.public_id;
 
-      const resultAction = await dispatch(picture({imageUrl,publicId}));
+      const resultAction = await dispatch(picture({ imageUrl, publicId }));
 
-            if (picture.fulfilled.match(resultAction)) {
-              const userupdated = resultAction.payload;
-              console.log(" successful!");
-              console.log("User data:", userupdated);
-              toast.success("Image uploaded!");
+      if (picture.fulfilled.match(resultAction)) {
+        const userupdated = resultAction.payload;
+        console.log(" successful!");
+        console.log("User data:", userupdated);
+        toast.success("Image uploaded!");
+      } else {
+        console.log("error", error);
+        //  Get error directly from resultAction
+        if (resultAction.payload) {
+          console.log("updated failed:", resultAction.payload); // e.g. { error: "Invalid credentials" }
+          toast.error("Failed to upload image");
+        }
+      }
 
- 
-            } else {
-              console.log("error", error);
-              //  Get error directly from resultAction
-              if (resultAction.payload) {
-                console.log("updated failed:", resultAction.payload); // e.g. { error: "Invalid credentials" }
-                toast.error("Failed to upload image");
-              }
-            }
-   
-       //  const result = await apiClient.put('users/userPicture',{imageUrl,publicId})
+      //  const result = await apiClient.put('users/userPicture',{imageUrl,publicId})
 
       setAvater(imageUrl);
     } catch (error) {

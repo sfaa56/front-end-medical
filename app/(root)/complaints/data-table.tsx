@@ -33,11 +33,16 @@ import {
 import { usePathname, useRouter } from "next/navigation";
 import { FiSearch } from "react-icons/fi";
 import { Input } from "@/components/ui/input";
+import { AppDispatch } from "@/store/store";
+import { useDispatch } from "react-redux";
+import { fetchComplaints } from "@/features/complaint/complaintSlice";
+import { useDebounce } from "@/hooks/useDebounce";
 
 interface DataTableProps<TData, TValue> {
   columns: ColumnDef<TData, TValue>[];
   data: TData[];
   user?: string;
+  meta: any;
 }
 
 const PropertyType = [
@@ -57,6 +62,7 @@ export function DataTable<TData, TValue>({
   columns,
   data,
   user,
+  meta,
 }: DataTableProps<TData, TValue>) {
   const [sorting, setSorting] = React.useState<SortingState>([]);
   const [columnFilters, setColumnFilters] = React.useState<ColumnFiltersState>(
@@ -88,6 +94,40 @@ export function DataTable<TData, TValue>({
     },
   });
 
+  const [filters, setFilters] = React.useState({
+    status: "",
+    search: "",
+    type: "",
+    page: 1,
+  });
+
+  const dispatch = useDispatch<AppDispatch>();
+
+  const updateFilters = (updates: any) => {
+    const newFilters = { ...filters, ...updates };
+    if (JSON.stringify(newFilters) !== JSON.stringify(filters)) {
+      setFilters({ ...newFilters, page: 1 });
+      dispatch(fetchComplaints({ ...newFilters, page: 1 }));
+    }
+  };
+
+  const handleFilterChange = (
+    filterKey: any,
+    value: string | number | boolean | undefined
+  ) => {
+    const newFilters = { ...filters, [filterKey]: value };
+    setFilters(newFilters);
+    dispatch(fetchComplaints(newFilters));
+  };
+
+  const [searchTerm, setSearchTerm] = React.useState("");
+  const debouncedSearch = useDebounce(searchTerm, 400); // waits 400ms before triggering
+
+  // When debouncedSearch changes, call backend
+  React.useEffect(() => {
+    updateFilters({search: debouncedSearch});
+  }, [debouncedSearch]);
+
   return (
     <div>
       <div className="flex justify-start  gap-4 mb-3">
@@ -97,12 +137,8 @@ export function DataTable<TData, TValue>({
           </span>
           <Input
             placeholder="Search sender or Complaint id"
-            value={
-              (table.getColumn("customer")?.getFilterValue() as string) ?? ""
-            }
-            onChange={(event) =>
-              table.getColumn("Sender")?.setFilterValue(event.target.value)
-            }
+            value={searchTerm}
+            onChange={(e) => setSearchTerm(e.target.value)}
             className="pl-10 w-[245px]"
           />
         </div>
@@ -111,10 +147,7 @@ export function DataTable<TData, TValue>({
           <div className="flex items-center">
             <Select
               onValueChange={(value) => {
-                const column = table.getColumn("status");
-                if (column) {
-                  column.setFilterValue(value === "All" ? undefined : value);
-                }
+                updateFilters({ type: value });
               }}
             >
               <SelectTrigger className="gap-4">
@@ -133,10 +166,7 @@ export function DataTable<TData, TValue>({
           <div className="flex items-center">
             <Select
               onValueChange={(value) => {
-                const column = table.getColumn("status");
-                if (column) {
-                  column.setFilterValue(value === "All" ? undefined : value);
-                }
+                updateFilters({ status: value });
               }}
             >
               <SelectTrigger className="gap-4">

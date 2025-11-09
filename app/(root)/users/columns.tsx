@@ -23,6 +23,7 @@ import {
 import { toast } from "sonner";
 import { useDispatch, useSelector } from "react-redux";
 import { AppDispatch } from "@/store/store";
+import { FaRegUserCircle } from "react-icons/fa";
 
 // This type is used to define the shape of our data.
 export type User = {
@@ -31,11 +32,13 @@ export type User = {
     url?: string;
   };
   name: string;
+  firstName: string;
+  lastName: string;
   email: string;
-  phoneNumber: string;
+  phone: string;
   role: string;
   isActive: boolean;
-  SubSpecialty?: { name: string }; // 👈 Add this
+  subspecialty?: { name: string }; // 👈 Add this
   isVerified?: boolean;
 };
 
@@ -46,69 +49,71 @@ const ActionCell = ({ row }: { row: { original: User } }) => {
   return <div>actions</div>;
 };
 
-
-
 export const getColumns = (
-  roleFilter?: string,
+  roleFilter?: any,
   VerifiedFilter?: boolean
 ): ColumnDef<User>[] => {
+
+console.log("VerifiedFilter",roleFilter)
+
+
   const dispatch = useDispatch<AppDispatch>();
+  const approvingUserId = useSelector(
+    (state: any) => state.users.approvingUserId
+  );
 
-  const handelApproveUser = async (userId: string) => {
+  const handelApproveUser = (userId: string) => {
+    dispatch(approveUser(userId));
+  };
+
+  const deleteU = async (id) => {
+
+    console.log("id",id)
     try {
-      const resultAction = await dispatch(approveUser(userId));
+      const resultAction = await dispatch(deleteUser({userId:id}));
 
-      if (approveUser.fulfilled.match(resultAction)) {
-        toast.success("User approved successfully");
+      if (deleteUser.fulfilled.match(resultAction)) {
+        toast.success("User deleted successfully");
       } else {
-        console.error("Failed to approve user:", resultAction.error.message);
-        toast.error("Failed to approve user");
+        const errorMessage =
+          (resultAction as any)?.error?.message || "Unknown error";
+        console.error("Failed to delete user:", errorMessage);
+        toast.error("Failed to delete user");
       }
     } catch (error) {
-      console.error("Error approving user:", error);
-      toast.error("Failed to approve user");
+      console.error("Error deleting user:", error);
+      toast.error("Failed to delete user");
     }
   };
 
-
-  
-const deleteU = async (id) => {
-  try {
-  
-    const resultAction = await dispatch(deleteUser(id));
-
-    if (deleteUser.fulfilled.match(resultAction)) {
-      toast.success("User deleted successfully");
-    } else {
-      const errorMessage =
-        (resultAction as any)?.error?.message || "Unknown error";
-      console.error("Failed to delete user:", errorMessage);
-      toast.error("Failed to delete user");
-    }
-  } catch (error) {
-    console.error("Error deleting user:", error);
-    toast.error("Failed to delete user");
-  }
-};
-
-  console.log("ttt", VerifiedFilter);
   const columns: ColumnDef<User>[] = [
     {
-      accessorKey: "img",
+      accessorKey: "image",
       header: "Image",
       cell: ({ row }) => (
         <div className="flex items-center">
-          <img
-            src={row.original?.image?.url}
-            alt={`Image of ${row.original.name}`}
-            className="w-12 h-12 rounded-[100%] object-cover"
-          />
+          {row.original?.image?.url ? (
+            <img
+              src={row.original?.image?.url}
+              alt={`Image of ${row.original.name}`}
+              className="w-12 h-12 rounded-[100%] object-cover"
+            />
+          ) : (
+            <FaRegUserCircle className="w-12 text-3xl" />
+          )}
         </div>
       ),
     },
-    { accessorKey: "name", header: "Name" },
+    {
+      accessorKey: "username",
+      header: "Name",
+      cell: ({ row }) => {
+        const { firstName, lastName } = row.original;
+        return `${firstName} ${lastName}`;
+      },
+    },
     { accessorKey: "email", header: "Email" },
-    { accessorKey: "phoneNumber", header: "Phone" },
+    { accessorKey: "phone", header: "Phone" },
     {
       accessorKey: "role",
       header: "Role",
@@ -120,69 +125,133 @@ const deleteU = async (id) => {
         return <div className={roleClass}>{role}</div>;
       },
     },
-    {
-      accessorKey: "isActive",
-      header: "Status",
-      cell: ({ row }) => {
-        const status = row.original.isActive;
-        return (
-          <span
-            className={`px-3 py-1 rounded-full text-xs font-semibold
-          ${
-            status === true
-              ? "bg-green-100 text-green-700"
-              : "bg-red-200 text-red-600"
-          }
-        `}
-          >
-            {status ? "Active" : "Inactive"}
-          </span>
-        );
-      },
-    },
+    // {
+    //   accessorKey: "isActive",
+    //   header: "Status",
+    //   cell: ({ row }) => {
+    //     const status = row.original.isActive;
+    //     return (
+    //       <span
+    //         className={`px-3 py-1 rounded-full text-xs font-semibold
+    //       ${
+    //         status === true
+    //           ? "bg-green-100 text-green-700"
+    //           : "bg-red-200 text-red-600"
+    //       }
+    //     `}
+    //       >
+    //         {status ? "Active" : "Inactive"}
+    //       </span>
+    //     );
+    //   },
+    // },
     {
       accessorKey: "isVerified",
-      header: () => null, // Hide header
-      cell: () => null, // Hide cell
-      enableHiding: true, // Allow hiding
+      header:
+        roleFilter.role === "provider" || roleFilter.isVerified === false
+          ? "isVerified"
+          : () => null, // hide header when not needed
+      cell: ({ row }) => {
+        if (roleFilter.role === "provider" || roleFilter.isVerified === false) {
+          const res = row.original.isVerified;
+          return (
+            <span
+              className={`px-1 py-1 rounded-full text-xs font-semibold
+            ${res ? "bg-green-100 text-green-700" : "bg-red-200 text-red-600"}
+          `}
+            >
+              {res ? "Verified" : "Not Verified"}
+            </span>
+          );
+        }
+        return null; // hide cell when not needed
+      },
+      enableHiding: true, // still usable for filters
     },
   ];
 
   // ✅ Add specialty column only for Provider
-  if (roleFilter === "Provider" || VerifiedFilter === false) {
-    columns.splice(5, 0, {
-      accessorKey: "SubSpecialty",
-      header: "Specialty",
-      cell: ({ row }) => {
-        const specialty = row.original.SubSpecialty?.name || "N/A";
-        return <span className="text-gray-600">{specialty}</span>;
-      },
-    });
-  }
+  // if (roleFilter.role === "Provider" || roleFilter.isVerified === false) {
+  //   columns.splice(5, 0, {
+  //     accessorKey: "subspecialty",
+  //     header: "Specialty",
+  //     cell: ({ row }) => {
+  //       const specialty = row.original.subspecialty?.name || "N/A";
+  //       return <span className="text-gray-600">{specialty}</span>;
+  //     },
+  //   });
+  // }
+
+  // ✅ Add specialty column only for Provider
+  // if (roleFilter === "Provider" || VerifiedFilter === false) {
+  //   columns.splice(5, 0, {
+  //     accessorKey: "isVerified",
+  //     header: "isVerified",
+  //     cell: ({ row }) => {
+  //       const res = row.original.isVerified;
+  //       return (
+  //         <span
+  //           className={`px-1 py-1 rounded-full text-xs font-semibold
+  //       ${res ? "bg-green-100 text-green-700" : "bg-red-200 text-red-600"}
+  //     `}
+  //         >
+  //           {res ? "Verified" : "Not Verified"}
+  //         </span>
+  //       );
+  //     },
+  //   });
+  // }
 
   columns.push({
     id: "actions",
     cell: ({ row }: { row: { original: User } }) => {
       const user = row.original;
-      return VerifiedFilter === false ? (
+      return roleFilter.isVerified === false ? (
         <div className="flex gap-3 text- items-center justify-center">
-          <button
-            title="View User"
-            className=" hover:cursor-pointer flex items-center gap-2 accept text-blue-600  "
-            onClick={() => {
-              /* handle view user logic here */
-            }}
-          >
-            <FiEye /> View
-          </button>
-
+          <Link href={`users/approve/${user._id}`}>
+            <button
+              title="View User"
+              className=" hover:cursor-pointer flex items-center gap-2 accept text-blue-600  "
+              onClick={() => {
+                /* handle view user logic here */
+              }}
+            >
+              <FiEye /> View
+            </button>
+          </Link>
           <div className="w-px h-4 bg-gray-300"></div>
 
           <button
             onClick={() => handelApproveUser(user._id ?? "")}
             className="text-green-500 hover:cursor-pointer flex items-center gap-1 accept"
+            disabled={approvingUserId === user._id} // disable while loading
           >
-            <IoMdCheckmark /> Accept
+            {approvingUserId === user._id ? (
+              <svg
+                className="animate-spin h-4 w-4 text-green-500"
+                xmlns="http://www.w3.org/2000/svg"
+                fill="none"
+                viewBox="0 0 24 24"
+              >
+                <circle
+                  className="opacity-25"
+                  cx="12"
+                  cy="12"
+                  r="10"
+                  stroke="currentColor"
+                  strokeWidth="4"
+                ></circle>
+                <path
+                  className="opacity-75"
+                  fill="currentColor"
+                  d="M4 12a8 8 0 018-8v4a4 4 0 00-4 4H4z"
+                ></path>
+              </svg>
+            ) : (
+              <>
+                <IoMdCheckmark /> Accept
+              </>
+            )}
           </button>
           <div className="w-px h-4 bg-gray-300"></div>
           <div className="reject">
@@ -191,7 +260,7 @@ const deleteU = async (id) => {
         </div>
       ) : (
         <div className="text-center gap-2">
-          <Link href={"users/view/555"}>
+          <Link href={`users/view/${user._id}`}>
             <button
               title="View User"
               className="p-2 rounded hover:bg-gray-100 text-blue-600"
@@ -219,7 +288,9 @@ const deleteU = async (id) => {
             <AlertDialogTrigger asChild>
               <button
                 className="p-2 rounded hover:bg-gray-100 text-red-500"
-                onClick={(e) => {e.stopPropagation()}}
+                onClick={(e) => {
+                  e.stopPropagation();
+                }}
                 title="Delete User"
               >
                 <FiDelete />

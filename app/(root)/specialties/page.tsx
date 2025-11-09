@@ -5,6 +5,8 @@ import { Label } from "@/components/ui/label";
 import React, { useRef, useState, useEffect } from "react";
 import axios from "axios";
 import { apiClient } from "@/lib/api";
+import { toast } from "sonner";
+import Loading from "@/components/Loading";
 
 type SubSpecialty = {
   _id?: string;
@@ -28,14 +30,20 @@ function Page() {
   const [subSpecialtyTags, setSubSpecialtyTags] = useState<SubSpecialty[]>([]);
   const subSpecialtyInputRef = useRef<HTMLInputElement>(null);
 
+  const [loading, setLoading] = useState(false); // for initial fetch
+  const [submitting, setSubmitting] = useState(false); // for form submit
+
   // Fetch specialties from API
   useEffect(() => {
     const fetchSpecialties = async () => {
+      setLoading(true);
       try {
         const res = await apiClient.get("/specialties");
         setSpecialties(res.data); // Make sure your API returns an array of specialties
       } catch (err) {
-        // Handle error
+        toast.error("Something went wrong");
+      } finally {
+        setLoading(false);
       }
     };
     fetchSpecialties();
@@ -77,7 +85,6 @@ function Page() {
         setSubSpecialtyTags([
           ...subSpecialtyTags,
           {
-
             name: value,
             specialty: form.specialty,
           },
@@ -94,9 +101,10 @@ function Page() {
 
   // Handle add/update submit
   const handleSubmit = async (e: React.FormEvent) => {
-    console.log("1111111111");
     e.preventDefault();
     if (!form.specialty.trim() || subSpecialtyTags.length === 0) return;
+
+    setSubmitting(true);
 
     const payload = {
       specialty: form.specialty,
@@ -106,14 +114,13 @@ function Page() {
       })),
     };
 
-    if (editingId) {
-      // UPDATE
-      try {
+    try {
+      if (editingId) {
+        // UPDATE
         const res = await apiClient.put(
           `/specialties/update/${editingId}`,
           payload
         );
-
         if (res.status === 200) {
           setSpecialties((prev) =>
             prev.map((sp) =>
@@ -130,23 +137,33 @@ function Page() {
             )
           );
         }
+        toast.success("Specialty updated successfully");
         setEditingId(null);
-      } catch (err) {
-        // Handle error
-      }
-    } else {
-      console.log("hhhhhhhh");
-      // ADD
-      try {
+      } else {
+        // ADD
         const res = await apiClient.post("/specialties/create", payload);
         setSpecialties((prev) => [...prev, res.data]);
-      } catch (err) {
-        console.log("error", err);
-        // Handle error
+        toast.success("Specialty created successfully");
       }
+      setForm({ specialty: "", subSpecialty: "" });
+      setSubSpecialtyTags([]);
+    } catch (err: any) {
+      if (err.response?.data?.relatedCategories) {
+        // لو السيرفر رجع كاتيجوريز مرتبطة
+        const categoryNames = err.response.data.relatedCategories
+          .map((r: any) => r.name)
+          .join(", "); // نخليهم مفصولين بفاصلة
+        toast.error(
+          `Cannot delete specialty. Related categories: ${categoryNames}`
+        );
+      } else if (err.response?.data?.message) {
+        toast.error(err.response.data.message);
+      } else {
+        toast.error("Failed to save specialty");
+      }
+    } finally {
+      setSubmitting(false);
     }
-    setForm({ specialty: "", subSpecialty: "" });
-    setSubSpecialtyTags([]);
   };
 
   console.log("Specialties:", specialties);
@@ -161,15 +178,25 @@ function Page() {
   // Handle delete
   const handleDelete = async (id: string) => {
     try {
-      await apiClient.delete(`/specialties/delete/${id}`,{withCredentials:true});
+      await apiClient.delete(`/specialties/delete/${id}`, {
+        withCredentials: true,
+      });
       setSpecialties((prev) => prev.filter((sp) => sp._id !== id));
       if (editingId === id) {
         setEditingId(null);
         setForm({ specialty: "", subSpecialty: "" });
         setSubSpecialtyTags([]);
       }
-    } catch (err) {
-      // Handle error
+    } catch (err: any) {
+      console.log("err", err);
+      if (err.response.data.relatedCategories) {
+        toast.error(err.response.data.message);
+        toast.error(
+          err.response.data.relatedCategories.map((r) => r.name).join(", ")
+        );
+      }
+
+      toast.error("Something went wrong");
     }
   };
 
@@ -183,71 +210,76 @@ function Page() {
 
       <div className="mx-auto flex flex-col md:flex-row gap-8">
         {/* Specialties List */}
-        <div className="flex-1 space-y-5">
-          {specialties.map((sp) => (
-            <div
-              key={sp._id}
-              className="bg-white rounded-xl shadow p-5 transition hover:shadow-lg hover:cursor-pointer"
-              onClick={() =>
-                setExpandedId(expandedId === sp._id ? null : sp._id)
-              }
-            >
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-4">
-                  <span className="text-lg font-semibold">{sp.name}</span>
-                  <span className="inline-block bg-secondary/10 text-secondary text-xs font-semibold px-3 py-1 rounded-full">
-                    {sp.subSpecialties?.length} Sub-specialt
-                    {sp.subSpecialties?.length === 1 ? "y" : "ies"}
-                  </span>
-                </div>
-                <div className="flex gap-2">
-                  <button
-                    className="px-3 py-1 rounded border border-gray-400 text-gray-700 hover:bg-gray-100 text-xs font-medium transition"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      handleEdit(sp);
-                    }}
-                  >
-                    Update
-                  </button>
-                  <button
-                    className="px-3 py-1 rounded border border-gray-400 text-gray-700 hover:bg-gray-100 text-xs font-medium transition"
-                    onClick={() =>
-                      setExpandedId(expandedId === sp._id ? null : sp._id)
-                    }
-                  >
-                    {expandedId === sp._id
-                      ? "Hide Sub-specialties"
-                      : "View Sub-specialties"}
-                  </button>
-                  <button
-                    className="px-3 py-1 rounded border-red-400 border text-red-700 hover:bg-red-50 text-xs font-medium transition"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      handleDelete(sp._id);
-                    }}
-                  >
-                    Delete
-                  </button>
-                </div>
-              </div>
-              {/* Animated expand/collapse */}
+
+        {loading || specialties.length === 0 ? (
+          <Loading />
+        ) : (
+          <div className="flex-1 space-y-5">
+            {specialties.map((sp) => (
               <div
-                className={`transition-all duration-300 overflow-hidden ${
-                  expandedId === sp._id ? "max-h-40 mt-4" : "max-h-0"
-                }`}
+                key={sp._id}
+                className="bg-white rounded-xl shadow p-5 transition hover:shadow-lg hover:cursor-pointer"
+                onClick={() =>
+                  setExpandedId(expandedId === sp._id ? null : sp._id)
+                }
               >
-                {expandedId === sp._id && (
-                  <ul className="list-disc pl-6 text-sm text-gray-700 space-y-1 marker:text-secondary">
-                    {sp.subSpecialties.map((sub, idx) => (
-                      <li key={idx}>{sub.name}</li>
-                    ))}
-                  </ul>
-                )}
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-4">
+                    <span className="text-lg font-semibold">{sp.name}</span>
+                    <span className="inline-block bg-secondary/10 text-secondary text-xs font-semibold px-3 py-1 rounded-full">
+                      {sp.subSpecialties?.length} Sub-specialt
+                      {sp.subSpecialties?.length === 1 ? "y" : "ies"}
+                    </span>
+                  </div>
+                  <div className="flex gap-2">
+                    <button
+                      className="px-3 py-1 rounded border border-gray-400 text-gray-700 hover:bg-gray-100 text-xs font-medium transition"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        handleEdit(sp);
+                      }}
+                    >
+                      Update
+                    </button>
+                    <button
+                      className="px-3 py-1 rounded border border-gray-400 text-gray-700 hover:bg-gray-100 text-xs font-medium transition"
+                      onClick={() =>
+                        setExpandedId(expandedId === sp._id ? null : sp._id)
+                      }
+                    >
+                      {expandedId === sp._id
+                        ? "Hide Sub-specialties"
+                        : "View Sub-specialties"}
+                    </button>
+                    <button
+                      className="px-3 py-1 rounded border-red-400 border text-red-700 hover:bg-red-50 text-xs font-medium transition"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        handleDelete(sp._id);
+                      }}
+                    >
+                      Delete
+                    </button>
+                  </div>
+                </div>
+                {/* Animated expand/collapse */}
+                <div
+                  className={`transition-all duration-300 overflow-hidden ${
+                    expandedId === sp._id ? "max-h-40 mt-4" : "max-h-0"
+                  }`}
+                >
+                  {expandedId === sp._id && (
+                    <ul className="list-disc pl-6 text-sm text-gray-700 space-y-1 marker:text-secondary">
+                      {sp.subSpecialties.map((sub, idx) => (
+                        <li key={idx}>{sub.name}</li>
+                      ))}
+                    </ul>
+                  )}
+                </div>
               </div>
-            </div>
-          ))}
-        </div>
+            ))}
+          </div>
+        )}
 
         {/* Add/Update Specialty Form */}
         <div className="w-full md:w-[600px]">
@@ -312,8 +344,19 @@ function Page() {
               </div>
 
               <div className="flex gap-2">
-                <Button type="submit" variant={"submit"} className="h-10">
-                  {editingId ? "Update" : "Add"}
+                <Button
+                  type="submit"
+                  variant={"submit"}
+                  className="h-10"
+                  disabled={submitting || loading}
+                >
+                  {submitting
+                    ? editingId
+                      ? "Updating..."
+                      : "Saving..."
+                    : editingId
+                    ? "Update"
+                    : "Add"}
                 </Button>
                 {editingId && (
                   <Button

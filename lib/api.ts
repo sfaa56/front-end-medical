@@ -9,6 +9,16 @@ export const apiClient = axios.create({
  
 });
 
+
+// ⚡ interceptor لإضافة الـ token تلقائيًا
+apiClient.interceptors.request.use(config => {
+    const stored = JSON.parse(localStorage.getItem("user") || "{}");
+    const token = stored.accessToken;
+  if (token) config.headers.Authorization = `Bearer ${token}`;
+  return config;
+});
+
+
 export const fetchData = async (endpoint: string) => {
   try {
     const response = await apiClient.get(endpoint);

@@ -34,6 +34,10 @@ import {
 import { getColumns } from "./columns";
 
 import type { User } from "./columns";
+import { useDispatch, useSelector } from "react-redux";
+import { AppDispatch, RootState } from "@/store/store";
+import { fetchUsers } from "@/features/user/useSlice";
+import { useDebounce } from "@/hooks/useDebounce";
 
 interface DataTableProps {
   data: User[];
@@ -46,13 +50,49 @@ export function DataTable({ data, specialties }: DataTableProps) {
     []
   );
 
+  const [filters, setFilters] = React.useState({
+    role: "",
+    isVerified: undefined,
+    specialty: "",
+    status: "",
+    search: "",
+    page: 1,
+  });
+
+  const { users, loading, meta } = useSelector(
+    (state: RootState) => state.users
+  );
+  const dispatch = useDispatch<AppDispatch>();
+
+  const updateFilters = (updates: any) => {
+    const newFilters = { ...filters, ...updates, page: 1 };
+    setFilters(newFilters);
+    dispatch(fetchUsers(newFilters));
+  };
+
+  const handleFilterChange = (
+    filterKey: any,
+    value: string | number | boolean | undefined
+  ) => {
+    const newFilters = { ...filters, [filterKey]: value };
+    setFilters(newFilters);
+    dispatch(fetchUsers(newFilters));
+  };
+
+  // React.useEffect(() => {
+  //   dispatch(fetchUsers(filters));
+  // }, [dispatch, filters]);
+
   const roleFilter = columnFilters.find((filter) => filter.id === "role")
     ?.value as string;
+
   const VerifiedFilter = columnFilters.find(
     (filter) => filter.id === "isVerified"
   )?.value as boolean;
 
-  const columns = getColumns(roleFilter, VerifiedFilter);
+console.log("VerifiedFilter column",VerifiedFilter)
+
+  const columns = getColumns(filters);
 
   const table = useReactTable({
     data,
@@ -69,41 +109,53 @@ export function DataTable({ data, specialties }: DataTableProps) {
     },
   });
 
+  const [searchTerm, setSearchTerm] = React.useState("");
+  const debouncedSearch = useDebounce(searchTerm, 400); // waits 400ms before triggering
+
+  // When debouncedSearch changes, call backend
+React.useEffect(() => {
+  handleFilterChange("search", debouncedSearch);
+}, [debouncedSearch]);
+
   return (
     <div>
       <div className="flex  mb-4 justify-between flex-col md:flex-row ">
         <div className="flex bg-white items-center rounded-md border px-[5px] text-sm font-sans py-1 max-w-[300px] mb-2 md:mb-0">
-          {["All", "Client", "Provider", "Request"].map((role) => (
-            <button
-              key={role}
-              onClick={() => {
-                const columnRole = table.getColumn("role");
-                const columnIsVerified = table.getColumn("isVerified");
-                if (role === "Request") {
-                  columnRole?.setFilterValue(undefined); // Clear role filter
-                  columnIsVerified?.setFilterValue(false); // Show only isVerified = false
-                } else {
-                  columnIsVerified?.setFilterValue(undefined); // Clear isVerified filter
-                  columnRole?.setFilterValue(role === "All" ? undefined : role);
-                }
-              }}
-              className={`px-4 py-1 rounded-md transition ${
-                (
-                  role === "Request"
-                    ? table.getColumn("isVerified")?.getFilterValue() === false
-                    : table.getColumn("isVerified")?.getFilterValue() ===
-                      undefined
-                    ? table.getColumn("role")?.getFilterValue() ===
-                      (role === "All" ? undefined : role)
-                    : false
-                )
-                  ? "bg-secondary text-white font-sans font-medium text-sm"
-                  : "bg-white text-gray-500 border-gray-200 hover:bg-gray-100"
-              }`}
-            >
-              {role}
-            </button>
-          ))}
+          {["All", "Client", "Provider", "Request"].map((role) => {
+            const isActive =
+              role === "All"
+                ? !filters.role && filters.isVerified === undefined
+                : role === "Request"
+                ? filters.role === "provider" && filters.isVerified === false
+                : filters.role === role.toLowerCase() &&
+                  filters.isVerified === undefined;
+
+            const handleClick = () => {
+              if (role === "All")
+                updateFilters({ role: "", isVerified: undefined });
+              else if (role === "Request")
+                updateFilters({ role: "provider", isVerified: false });
+              else
+                updateFilters({
+                  role: role.toLowerCase(),
+                  isVerified: undefined,
+                });
+            };
+
+            return (
+              <button
+                key={role}
+                onClick={handleClick}
+                className={`px-4 py-1 rounded-md transition ${
+                  isActive
+                    ? "bg-secondary text-white"
+                    : "bg-white text-gray-500 hover:bg-gray-100"
+                }`}
+              >
+                {role}
+              </button>
+            );
+          })}
         </div>
 
         <div className="flex gap-3">
@@ -126,18 +178,18 @@ export function DataTable({ data, specialties }: DataTableProps) {
                   </SelectTrigger>
 
                   <SelectContent>
-                    <SelectItem value="All" key={"All"}>All</SelectItem>
+                    <SelectItem value="All" key={"All"}>
+                      All
+                    </SelectItem>
                     {specialties.map((specialty) =>
-                      specialty.subSpecialties?.map(
-                        (subSpecialty) => (
-                          <SelectItem
-                            key={subSpecialty.name}
-                            value={subSpecialty.name}
-                          >
-                            {subSpecialty.name}
-                          </SelectItem>
-                        )
-                      )
+                      specialty.subSpecialties?.map((subSpecialty) => (
+                        <SelectItem
+                          key={subSpecialty.name}
+                          value={subSpecialty.name}
+                        >
+                          {subSpecialty.name}
+                        </SelectItem>
+                      ))
                     )}
                   </SelectContent>
                 </Select>
@@ -167,21 +219,19 @@ export function DataTable({ data, specialties }: DataTableProps) {
             </div>
           )}
 
-          <div className="relative max-w-sm">
-            <span className="absolute left-3 top-1/2 -translate-y-1/2 text-secondary">
-              <FiSearch />
-            </span>
-            <Input
-              placeholder="Search ..."
-              value={
-                (table.getColumn("username")?.getFilterValue() as string) ?? ""
-              }
-              onChange={(event) =>
-                table.getColumn("username")?.setFilterValue(event.target.value)
-              }
-              className="pl-10 "
-            />
-          </div>
+<div className="relative max-w-sm">
+  <span className="absolute left-3 top-1/2 -translate-y-1/2 text-secondary">
+    <FiSearch />
+  </span>
+  <Input
+    placeholder="Search..."
+    value={searchTerm}
+    onChange={(e) => setSearchTerm(e.target.value)}
+    className="pl-10"
+  />
+</div>
+
+
         </div>
       </div>
 
@@ -235,22 +285,25 @@ export function DataTable({ data, specialties }: DataTableProps) {
           </TableBody>
         </Table>
       </div>
-      <div className="flex items-center justify-end space-x-2 py-4 ">
+      <div className="flex items-center justify-end space-x-2 py-4">
         <Button
           variant="outline"
           className="bg-white"
           size="sm"
-          onClick={() => table.previousPage()}
-          disabled={!table.getCanPreviousPage()}
+          onClick={() => handleFilterChange("page", filters.page - 1)}
+          disabled={filters.page <= 1}
         >
           Previous
         </Button>
+        <span className="text-sm text-gray-600">
+          Page {meta?.page ?? 1} of {meta?.totalPages ?? 1}
+        </span>
         <Button
           className="bg-white"
           variant="outline"
           size="sm"
-          onClick={() => table.nextPage()}
-          disabled={!table.getCanNextPage()}
+          onClick={() => handleFilterChange("page", filters.page + 1)}
+          disabled={meta?.page >= meta?.totalPages}
         >
           Next
         </Button>

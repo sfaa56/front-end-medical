@@ -5,6 +5,7 @@ import { SidebarProvider } from "@/components/ui/sidebar";
 import { AppSidebar } from "@/components/app-sidebar";
 import Header from "@/components/Header";
 import { Toaster } from "@/components/ui/sonner";
+import AuthClient from "@/components/AuthClient";
 
 const workSans = localFont({
   src: [
@@ -67,9 +68,11 @@ export default function RootLayout({
 }: Readonly<{
   children: React.ReactNode;
 }>) {
+  
   return (
     <html lang="en">
       <body className={workSans.variable}>
+        <AuthClient/>
         <SidebarProvider>
           <AppSidebar />
           <div className="bg-[#F6F6F6] mx-auto w-full">

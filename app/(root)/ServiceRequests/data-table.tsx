@@ -34,16 +34,25 @@ import {
 import { getColumns } from "./columns";
 
 import type { ServiceRequest } from "./columns";
+import { AppDispatch } from "@/store/store";
+import { useDispatch } from "react-redux";
+import { fetchServiceRequests } from "@/features/ServiceRequests/ServiceRequestsSlice";
+import { useSpecialties } from "@/hooks/useSpecialties";
 
 interface DataTableProps {
   data: any[];
+  meta?: any;
 }
 
-export function DataTable({ data }: DataTableProps) {
+export function DataTable({ data, meta }: DataTableProps) {
   const [sorting, setSorting] = React.useState<SortingState>([]);
   const [columnFilters, setColumnFilters] = React.useState<ColumnFiltersState>(
     []
   );
+
+  const { specialties } = useSpecialties();
+
+  console.log("specialties", specialties);
 
   const columns = getColumns();
 
@@ -62,56 +71,88 @@ export function DataTable({ data }: DataTableProps) {
     },
   });
 
+  const [filters, setFilters] = React.useState({
+    specialty: "",
+    status: "",
+    title: "",
+    page: 1,
+  });
+
+  const dispatch = useDispatch<AppDispatch>();
+
+  const updateFilters = (updates: any) => {
+    const newFilters = { ...filters, ...updates };
+    if (JSON.stringify(newFilters) !== JSON.stringify(filters)) {
+      setFilters({ ...newFilters, page: 1 });
+      dispatch(fetchServiceRequests({ ...newFilters, page: 1 }));
+    }
+  };
+
+  const handleFilterChange = (
+    filterKey: any,
+    value: string | number | boolean | undefined
+  ) => {
+    const newFilters = { ...filters, [filterKey]: value };
+    setFilters(newFilters);
+    dispatch(fetchServiceRequests(newFilters));
+  };
+
   return (
     <div>
       <div className="flex  mb-4 justify-between flex-col md:flex-row">
-        <div className="flex bg-white items-center rounded-md border px-[5px] text-sm font-sans py-1 max-w-[330px] mb-2 md:mb-0">
-          {["All", "waiting", "inprogress", "completed"].map((status) => (
-            <button
-              key={status}
-              onClick={() => {
-                const columnStatus = table.getColumn("status");
+        <div className="flex bg-white items-center rounded-md border px-[5px] text-sm font-sans py-1 max-w-[600px] mb-2 md:mb-0">
+          {[
+            "All",
+            "pending",
+            "offers_received",
+            "accepted",
+            "completed",
+            "cancelled",
+          ].map((status) => {
+            const isActive =
+              status === "All" ? !filters.status : filters.status === status;
 
-                if (columnStatus) {
-                  columnStatus?.setFilterValue(
-                    status === "All" ? undefined : status
-                  ); // Clear role filter
-                }
-              }}
-              className={`px-4 py-1 rounded-md transition ${
-                table.getColumn("status")?.getFilterValue() ===
-                (status === "All" ? undefined : status)
-                  ? "bg-secondary text-white font-sans font-medium text-sm"
-                  : "bg-white text-gray-500 border-gray-200 hover:bg-gray-100"
-              }`}
-            >
-              {status}
-            </button>
-          ))}
+            const handleClick = () => {
+              updateFilters({ status: status === "All" ? "" : status });
+            };
+
+            return (
+              <button
+                key={status}
+                onClick={handleClick}
+                className={`px-4 py-1 rounded-md transition  ${
+                  isActive
+                    ? "bg-secondary text-white "
+                    : "bg-white text-gray-500 hover:bg-gray-100"
+                }`}
+              >
+                {status}
+              </button>
+            );
+          })}
         </div>
 
         <div className="flex gap-3">
-          <div className="flex items-center gap-2 ">
+          <div className="flex items-center gap-2">
             <Select
               onValueChange={(value) => {
-                const column = table.getColumn("specialty");
-                if (column) {
-                  column.setFilterValue(value === "All" ? undefined : value);
-                }
+                updateFilters({ specialty: value === "all" ? "" : value });
               }}
             >
               <SelectTrigger className="gap-4 text-black-200">
-                <SelectValue placeholder="Speciality" />
+                <SelectValue placeholder="Specialty" />
               </SelectTrigger>
 
               <SelectContent>
-                <SelectItem value={"All"}>All</SelectItem>
-                <SelectItem value={"Doctor"}>Doctor </SelectItem>
-                <SelectItem value={"Lawyer"}>Lawyer</SelectItem>
-                <SelectItem value={"Engineer"}>Engineer</SelectItem>
-                <SelectItem value={"Carpenter"}>Carpenter</SelectItem>
-                <SelectItem value={"Electrician"}>Electrician</SelectItem>
-                <SelectItem value={"Mechanic"}>Mechanic </SelectItem>
+                {/* 🆕 "All" option */}
+                <SelectItem value="all">All Specialties</SelectItem>
+
+                {/* Render the list of specialties */}
+                {specialties.map((s) => (
+                  <SelectItem key={s._id} value={s._id}>
+                    {s.name}
+                  </SelectItem>
+                ))}
               </SelectContent>
             </Select>
           </div>
@@ -184,22 +225,25 @@ export function DataTable({ data }: DataTableProps) {
           </TableBody>
         </Table>
       </div>
-      <div className="flex items-center justify-end space-x-2 py-4 ">
+      <div className="flex items-center justify-end space-x-2 py-4">
         <Button
           variant="outline"
           className="bg-white"
           size="sm"
-          onClick={() => table.previousPage()}
-          disabled={!table.getCanPreviousPage()}
+          onClick={() => handleFilterChange("page", filters.page - 1)}
+          disabled={filters.page <= 1}
         >
           Previous
         </Button>
+        <span className="text-sm text-gray-600">
+          Page {meta?.page ?? 1} of {meta?.totalPages ?? 1}
+        </span>
         <Button
           className="bg-white"
           variant="outline"
           size="sm"
-          onClick={() => table.nextPage()}
-          disabled={!table.getCanNextPage()}
+          onClick={() => handleFilterChange("page", filters.page + 1)}
+          disabled={meta?.page >= meta?.totalPages}
         >
           Next
         </Button>

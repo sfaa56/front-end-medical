@@ -3,7 +3,8 @@ import type { Metadata } from "next";
 import "./globals.css";
 import { Provider } from "react-redux";
 import { store } from "@/store/store";
-import { ReduxProvider } from "@/app/provider/ReduxProvider"; 
+import { ReduxProvider } from "@/app/provider/ReduxProvider";
+import NotificationsSocketClient from "@/components/NotificationsSocketClient";
 
 // const geistSans = Geist({
 //   variable: "--font-geist-sans",
@@ -27,11 +28,11 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="en">
-      <body
-        className={` antialiased font-sans`}
-      >
-        <ReduxProvider>{children}</ReduxProvider>
-      
+      <body className={` antialiased font-sans`}>
+        <ReduxProvider>
+          {/* <NotificationsSocketClient /> */}
+          {children}
+        </ReduxProvider>
       </body>
     </html>
   );
